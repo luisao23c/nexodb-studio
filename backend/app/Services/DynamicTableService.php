@@ -2,11 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\BuilderField;
-use App\Models\BuilderModule;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -46,45 +42,7 @@ class DynamicTableService
         return $column;
     }
 
-    public function createTable(BuilderModule $module): void
-    {
-        Schema::create($module->table_name, function (Blueprint $table) {
-            $table->id(); $table->timestamps();
-        });
-    }
-
     /** Raw DDL helpers — DDL implicitly commits in MySQL, so never wrap in DB::transaction. */
-
-    public function addColumn(BuilderModule $module, BuilderField $field): void
-    {
-        Schema::table($module->table_name, function (Blueprint $table) use ($field, $module) {
-            $column = match ($field->data_type) {
-                'string' => $table->string($field->name, $field->length ?: 255),
-                'text' => $table->text($field->name),
-                'integer' => $table->bigInteger($field->name),
-                'decimal' => $table->decimal($field->name, 15, 2),
-                'boolean' => $table->boolean($field->name),
-                'date' => $table->date($field->name),
-                'datetime' => $table->dateTime($field->name),
-                'relation' => $table->unsignedBigInteger($field->name),
-                default => throw ValidationException::withMessages(['data_type' => 'Tipo de dato no permitido.']),
-            };
-            if ($field->nullable) $column->nullable();
-            if ($field->unique) $column->unique();
-            if ($field->default_value !== null && $field->default_value !== '') $column->default($this->castDefault($field));
-            if ($field->data_type === 'relation') {
-                $table->index($field->name);
-                // Create FOREIGN KEY constraint if related_module_id is set
-                if (!empty($field->related_module_id)) {
-                    $relatedModule = BuilderModule::find($field->related_module_id);
-                    if ($relatedModule && Schema::hasTable($relatedModule->table_name)) {
-                        $fkName = "fk_{$module->table_name}_{$field->name}";
-                        $table->foreign($field->name)->references('id')->on($relatedModule->table_name)->nullOnDelete();
-                    }
-                }
-            }
-        });
-    }
 
     /** ALTER TABLE ... MODIFY — change type/nullability/default/unique for an existing column. */
     public function modifyColumn(string $table, string $column, array $physical): void
@@ -182,13 +140,4 @@ class DynamicTableService
         return $numeric && is_numeric($value) ? (string) (float) $value : "'{$safe}'";
     }
 
-    private function castDefault(BuilderField $field): mixed
-    {
-        return match ($field->data_type) {
-            'integer' => (int) $field->default_value,
-            'decimal' => (float) $field->default_value,
-            'boolean' => filter_var($field->default_value, FILTER_VALIDATE_BOOL),
-            default => $field->default_value,
-        };
-    }
 }

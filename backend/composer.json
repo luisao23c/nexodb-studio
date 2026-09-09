@@ -2,7 +2,7 @@
   "$schema": "https://getcomposer.org/schema.json",
   "name": "nexodb/studio-api",
   "type": "project",
-  "description": "API para construir tablas, formularios y vistas CRUD desde metadatos.",
+  "description": "API protegida para administrar tablas MySQL, datos, relaciones, permisos y analítica.",
   "require": {
     "php": "^8.2",
     "laravel/framework": "^12.0",

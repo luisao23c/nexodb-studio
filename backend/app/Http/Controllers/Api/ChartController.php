@@ -4,34 +4,30 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BuilderChart;
-use App\Models\BuilderField;
-use App\Models\BuilderModule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ChartController extends Controller
 {
     public function index(): JsonResponse
     {
-        return response()->json(BuilderChart::with('module:id,name,table_name')->orderBy('name')->get());
+        return response()->json(BuilderChart::orderBy('name')->get());
     }
 
     public function store(Request $request): JsonResponse
     {
-        $data = $this->validated($request);
-        $chart = BuilderChart::create($data);
-
-        return response()->json($chart->load('module:id,name,table_name'), 201);
+        return response()->json(BuilderChart::create($this->validated($request)), 201);
     }
 
     public function update(Request $request, BuilderChart $chart): JsonResponse
     {
-        $data = $this->validated($request, false);
-        $chart->update($data);
+        $chart->update($this->validated($request));
 
-        return response()->json($chart->fresh()->load('module:id,name,table_name'));
+        return response()->json($chart->fresh());
     }
 
     public function destroy(BuilderChart $chart): JsonResponse
@@ -43,70 +39,50 @@ class ChartController extends Controller
 
     public function data(BuilderChart $chart): JsonResponse
     {
-        $module = $chart->module;
-        $table = $module->table_name;
-        $labelField = $chart->label_field;
-        $validColumns = $module->fields->pluck('name')->push('id')->all();
-        abort_if(! in_array($labelField, $validColumns, true), 422, 'Campo de etiqueta inválido.');
+        $this->assertSafeTable($chart->table_name);
+        $columns = Schema::getColumnListing($chart->table_name);
+        abort_unless(in_array($chart->label_field, $columns, true), 422, 'Campo de etiqueta inválido.');
 
+        $query = DB::table($chart->table_name);
         if ($chart->aggregate === 'count') {
-            $rows = DB::table($table)
-                ->select(DB::raw("`{$labelField}` as label"), DB::raw('COUNT(*) as value'))
-                ->groupBy($labelField)
-                ->orderBy('value', $chart->sort_direction)
-                ->limit(min($chart->limit, 50))
-                ->get();
+            $rows = $query->select($chart->label_field.' as label', DB::raw('COUNT(*) as value'));
         } else {
-            $valueField = (string) $chart->value_field;
-            abort_if($valueField === '' || ! in_array($valueField, $validColumns, true), 422, 'Campo de valor inválido.');
-            $agg = $chart->aggregate === 'avg' ? 'AVG' : ($chart->aggregate === 'min' ? 'MIN' : ($chart->aggregate === 'max' ? 'MAX' : 'SUM'));
-            $rows = DB::table($table)
-                ->select(DB::raw("`{$labelField}` as label"), DB::raw("{$agg}(`{$valueField}`) as value"))
-                ->groupBy($labelField)
-                ->orderBy('value', $chart->sort_direction)
-                ->limit(min($chart->limit, 50))
-                ->get();
+            abort_unless($chart->value_field && in_array($chart->value_field, $columns, true), 422, 'Campo de valor inválido.');
+            $aggregate = match ($chart->aggregate) {'avg' => 'AVG', 'min' => 'MIN', 'max' => 'MAX', default => 'SUM'};
+            $rows = $query->select($chart->label_field.' as label', DB::raw("{$aggregate}(`{$chart->value_field}`) as value"));
         }
 
-        // Resolve relation labels when the label field is a relation column.
-        $relationField = $module->fields->firstWhere('name', $labelField);
-        if ($relationField && $relationField->data_type === 'relation') {
-            $display = $relationField->display_column ?: ($relationField->relatedModule?->fields()->whereIn('data_type', ['string', 'text'])->orderBy('sort_order')->value('name') ?: 'id');
-            $rows = $rows->map(function ($row) use ($relationField, $display) {
-                if (is_numeric($row->label) && $row->label !== null) {
-                    $row->label = DB::table($relationField->relatedModule->table_name)->where('id', $row->label)->value($display) ?? $row->label;
-                }
-
-                return $row;
-            });
-        }
+        $rows = $rows->groupBy($chart->label_field)->orderBy('value', $chart->sort_direction)->limit(min($chart->limit, 50))->get();
 
         return response()->json([
             'chart' => $chart->only(['id', 'name', 'chart_type', 'color']),
-            'data' => $rows->map(fn ($r) => ['label' => (string) $r->label, 'value' => (float) $r->value]),
+            'data' => $rows->map(fn ($row) => ['label' => (string) ($row->label ?? 'Sin valor'), 'value' => (float) $row->value]),
         ]);
     }
 
-    private function validated(Request $request, bool $creating = true): array
+    private function validated(Request $request): array
     {
-        $rules = [
+        $data = $request->validate([
             'name' => 'required|string|max:80',
-            'module_id' => 'required|integer|exists:builder_modules,id',
+            'table_name' => 'required|string|max:64',
             'chart_type' => ['required', Rule::in(['bar', 'line', 'area', 'pie', 'donut'])],
-            'label_field' => 'required|string|max:60',
-            'value_field' => 'nullable|string|max:60',
+            'label_field' => 'required|string|max:64', 'value_field' => 'nullable|string|max:64',
             'aggregate' => ['required', Rule::in(['count', 'sum', 'avg', 'min', 'max'])],
             'sort_direction' => ['required', Rule::in(['asc', 'desc'])],
             'limit' => 'integer|min:1|max:50', 'color' => 'nullable|string|max:9', 'active' => 'boolean',
-        ];
-        $data = $request->validate($rules);
-        $module = BuilderModule::findOrFail($data['module_id']);
-        $valid = $module->fields->pluck('name')->push('id')->all();
-        abort_if(! in_array($data['label_field'], $valid, true), 422, 'Campo de etiqueta inválido.');
-        if (($data['value_field'] ?? '') !== '') {
-            abort_if(! in_array($data['value_field'], $valid, true), 422, 'Campo de valor inválido.');
-        }
+        ]);
+        $this->assertSafeTable($data['table_name']);
+        $columns = Schema::getColumnListing($data['table_name']);
+        abort_unless(in_array($data['label_field'], $columns, true), 422, 'Campo de etiqueta inválido.');
+        if (($data['value_field'] ?? '') !== '') abort_unless(in_array($data['value_field'], $columns, true), 422, 'Campo de valor inválido.');
 
         return $data;
+    }
+
+    private function assertSafeTable(string $table): void
+    {
+        if (! preg_match('/^nx_[a-zA-Z0-9_]+$/', $table) || ! Schema::hasTable($table)) {
+            throw ValidationException::withMessages(['table_name' => 'La tabla seleccionada no es válida.']);
+        }
     }
 }

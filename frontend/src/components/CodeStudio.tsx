@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Code2, LoaderCircle, Play, Plus, Save, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import type { CodePage, Module } from '../types';
+import type { CodePage, SchemaTable } from '../types';
 
 /** Generates a ready-to-edit React page that talks to the live API. */
-export function reactTemplate(pageName:string, moduleName:string, fields:{name:string;label:string}[]):string {
+export function reactTemplate(pageName:string, tableName:string, fields:{name:string;label:string}[]):string {
   const comp = pageName.replace(/[^a-zA-Z0-9]/g,'')||'MiPagina';
   return `import { useEffect, useState } from 'react';
 
-// Registros de "${moduleName}" consumiendo la API de NexoDB.
+// Registros de "${tableName}" consumiendo la API de NexoDB.
 const API = import.meta.env.VITE_API_URL;
 const KEY = import.meta.env.VITE_BUILDER_KEY;
 
@@ -17,7 +17,7 @@ export default function ${comp}() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch(\`\${API}/builder/modules/${moduleName}/records\`, { headers: { 'X-Builder-Key': KEY, Accept: 'application/json' } })
+    fetch(\`\${API}/builder/db/${tableName}/browse\`, { headers: { 'X-Builder-Key': KEY, Accept: 'application/json' } })
       .then(r => r.json())
       .then(p => setRows(p.data ?? []))
       .catch(e => setError(String(e)));
@@ -45,7 +45,7 @@ export default function ${comp}() {
 `;
 }
 
-export function CodeStudio({modules}:{modules:Module[]}) {
+export function CodeStudio({tables}:{tables:SchemaTable[]}) {
   const [pages,setPages] = useState<CodePage[]>([]);
   const [activeId,setActiveId] = useState<number|null>(null);
   const [code,setCode] = useState('');
@@ -65,8 +65,8 @@ export function CodeStudio({modules}:{modules:Module[]}) {
   async function remove(id:number){ if(!confirm('¿Eliminar esta página?'))return; await api.deletePage(id); const rest=pages.filter(p=>p.id!==id); setPages(rest); setActiveId(null); setCode(''); setName(''); }
   function runPreview(){ setPreviewDoc(code); }
   async function generateReact(){ const n = prompt('Nombre del componente React:','MiVista'); if(!n?.trim())return;
-    const mod = modules[0]; const fields = mod?.fields.map(f=>({name:f.name,label:f.label}))??[];
-    setCode(reactTemplate(n, mod?.table_name??'tabla', fields)); setStatus('Plantilla React generada — revísala y guárdala'); }
+    const table = tables[0]; const detail=table?await api.schemaTable(table.name):null; const fields=(detail?.columns??[]).filter(c=>!['created_at','updated_at','deleted_at'].includes(c.name)).map(c=>({name:c.name,label:c.name}));
+    setCode(reactTemplate(n, table?.name??'nx_tabla', fields)); setStatus('Plantilla React generada — revísala y guárdala'); }
 
   if(loading) return <div className="center-state small"><LoaderCircle className="spin"/><p>Cargando páginas…</p></div>;
 
@@ -94,7 +94,7 @@ export function CodeStudio({modules}:{modules:Module[]}) {
           <iframe ref={previewRef} title="Vista previa" sandbox="allow-scripts" className="code-preview"
             srcDoc={`<!doctype html><html><head><style>body{font-family:'DM Sans',sans-serif;padding:18px;margin:0}.nx-table{width:100%;border-collapse:collapse}.nx-table th{background:#f4f5f9;text-align:left;padding:8px 10px;font-size:.72rem;text-transform:uppercase}.nx-table td{padding:9px 10px;border-top:1px solid #e8ebef;font-size:.84rem}.nx-error{color:#dc4564}</style></head><body>${previewDoc}</body></html>`}/>
         </div>
-      </div>:<div className="panel empty-chart-card"><Code2 size={40}/><h3>Constructor de páginas</h3><p>Crea una página, edítala y previsualízala. Usa la plantilla React para empezar con código que consulta tus módulos.</p></div>}
+      </div>:<div className="panel empty-chart-card"><Code2 size={40}/><h3>Constructor de páginas</h3><p>Crea una página, edítala y previsualízala. La plantilla React consulta directamente tus tablas.</p></div>}
     </section>
   </div>;
 }

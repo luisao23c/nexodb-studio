@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\BuilderModule;
 use App\Models\BuilderPermission;
 use App\Models\BuilderRole;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -49,12 +49,12 @@ class RoleController extends Controller
         return response()->json(null, 204);
     }
 
-    /** Payload: { permissions: { [module_id]: {can_read,can_create,can_update,can_delete} } } */
+    /** Replace a role's permissions for physical nx_ tables. */
     public function savePermissions(Request $request, BuilderRole $role): JsonResponse
     {
         $data = $request->validate([
             'permissions' => 'required|array',
-            'permissions.*.module_id' => 'required|integer|exists:builder_modules,id',
+            'permissions.*.table_name' => ['required', 'string', 'max:64', 'regex:/^nx_[a-zA-Z0-9_]+$/'],
             'permissions.*.can_read' => 'boolean', 'permissions.*.can_create' => 'boolean',
             'permissions.*.can_update' => 'boolean', 'permissions.*.can_delete' => 'boolean',
         ]);
@@ -62,9 +62,10 @@ class RoleController extends Controller
         DB::transaction(function () use ($data, $role) {
             $role->permissions()->delete();
             foreach ($data['permissions'] as $perm) {
+                abort_unless(Schema::hasTable($perm['table_name']), 422, "La tabla {$perm['table_name']} no existe.");
                 if (! ($perm['can_read'] || $perm['can_create'] || $perm['can_update'] || $perm['can_delete'])) continue;
                 BuilderPermission::create([
-                    'role_id' => $role->id, 'module_id' => $perm['module_id'],
+                    'role_id' => $role->id, 'table_name' => $perm['table_name'],
                     'can_read' => (bool) ($perm['can_read'] ?? false),
                     'can_create' => (bool) ($perm['can_create'] ?? false),
                     'can_update' => (bool) ($perm['can_update'] ?? false),
@@ -74,12 +75,5 @@ class RoleController extends Controller
         });
 
         return response()->json($role->fresh()->load('permissions'));
-    }
-
-    public function moduleMatrix(): JsonResponse
-    {
-        return response()->json([
-            'modules' => BuilderModule::orderBy('name')->get(['id', 'name']),
-        ]);
     }
 }

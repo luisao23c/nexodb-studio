@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BuilderMenuItem extends Model
 {
-    protected $fillable = ['menu_id', 'parent_id', 'label', 'icon', 'target_type', 'target_id', 'url', 'badge', 'sort_order', 'active', 'required_role_ids'];
+    protected $fillable = ['menu_id', 'parent_id', 'label', 'icon', 'target_type', 'target_id', 'target_table', 'url', 'badge', 'sort_order', 'active', 'required_role_ids'];
     protected $casts = ['active' => 'boolean', 'required_role_ids' => 'array'];
 
     public function menu(): BelongsTo

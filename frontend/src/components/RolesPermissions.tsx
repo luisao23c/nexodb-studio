@@ -1,16 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { LoaderCircle, Lock, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
 import { api } from '../api/client';
-import type { Module, Role } from '../types';
+import type { Role, SchemaTable } from '../types';
 
 type Perm = {can_read:boolean;can_create:boolean;can_update:boolean;can_delete:boolean};
 const ACTIONS: (keyof Perm)[] = ['can_read','can_create','can_update','can_delete'];
 const ACTION_LABELS: Record<keyof Perm,string> = {can_read:'Ver',can_create:'Crear',can_update:'Editar',can_delete:'Borrar'};
 
-export function RolesPermissions({modules}:{modules:Module[]}) {
+export function RolesPermissions({tables}:{tables:SchemaTable[]}) {
   const [roles,setRoles] = useState<Role[]>([]);
   const [selectedId,setSelectedId] = useState<number|null>(null);
-  const [matrix,setMatrix] = useState<Record<number,Perm>>({});
+  const [matrix,setMatrix] = useState<Record<string,Perm>>({});
   const [newRole,setNewRole] = useState('');
   const [saving,setSaving] = useState(false);
   const [loading,setLoading] = useState(true);
@@ -24,17 +24,17 @@ export function RolesPermissions({modules}:{modules:Module[]}) {
 
   const selected = roles.find(r=>r.id===selectedId)??null;
   useEffect(()=>{ if(!selected) return;
-    const base:Record<number,Perm> = {};
-    modules.forEach(m=>base[m.id] = {can_read:false,can_create:false,can_update:false,can_delete:false});
-    selected.permissions.forEach(p=>base[p.module_id] = {can_read:p.can_read,can_create:p.can_create,can_update:p.can_update,can_delete:p.can_delete});
+    const base:Record<string,Perm> = {};
+    tables.forEach(t=>base[t.name] = {can_read:false,can_create:false,can_update:false,can_delete:false});
+    selected.permissions.forEach(p=>base[p.table_name] = {can_read:p.can_read,can_create:p.can_create,can_update:p.can_update,can_delete:p.can_delete});
     setMatrix(base);
-  },[selectedId,modules]); // eslint-disable-line react-hooks/exhaustive-deps
+  },[selectedId,tables]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function createRole(e:FormEvent){ e.preventDefault(); if(!newRole.trim())return; const r=await api.createRole({name:newRole}); setRoles(v=>[...v,r]); setSelectedId(r.id); setNewRole(''); }
   async function removeRole(id:number){ if(!confirm('¿Eliminar rol y sus permisos?'))return; await api.deleteRole(id); setRoles(v=>v.filter(r=>r.id!==id)); setSelectedId(null); }
-  function flip(moduleId:number,key:keyof Perm){ setMatrix(v=>{const cur=v[moduleId]??{can_read:false,can_create:false,can_update:false,can_delete:false}; return {...v,[moduleId]:{...cur,[key]:!cur[key]}};}); }
+  function flip(table:string,key:keyof Perm){ setMatrix(v=>{const cur=v[table]??{can_read:false,can_create:false,can_update:false,can_delete:false}; return {...v,[table]:{...cur,[key]:!cur[key]}};}); }
   async function save(){ if(!selected)return; setSaving(true); try{
-    await api.savePermissions(selected.id, Object.entries(matrix).map(([moduleId,p])=>({module_id:Number(moduleId),...p})));
+    await api.savePermissions(selected.id, Object.entries(matrix).map(([table_name,p])=>({table_name,...p})));
     setRoles(await api.roles());
   }finally{ setSaving(false); } }
 
@@ -55,15 +55,15 @@ export function RolesPermissions({modules}:{modules:Module[]}) {
           {!roles.length&&<p className="empty-cell">Crea el primer rol.</p>}
         </div>
         <div className="perm-panel">
-          {selected?.is_admin?<div className="callout admin-note"><Lock size={18}/><div><strong>Acceso total</strong><p>Este rol puede ver, crear, editar y borrar en todos los módulos (incluidos los futuros).</p></div></div>:
+          {selected?.is_admin?<div className="callout admin-note"><Lock size={18}/><div><strong>Acceso total</strong><p>Este rol puede ver, crear, editar y borrar en todas las tablas, incluidas las futuras.</p></div></div>:
           selected?<><table className="perm-table">
-            <thead><tr><th>Módulo</th>{ACTIONS.map(a=><th key={a}>{ACTION_LABELS[a]}</th>)}</tr></thead>
-            <tbody>{modules.map(m=><tr key={m.id}>
-              <td><Users size={14}/> {m.name}</td>
-              {ACTIONS.map(a=><td key={a}><input type="checkbox" checked={matrix[m.id]?.[a]??false} onChange={()=>flip(m.id,a)}/></td>)}
+            <thead><tr><th>Tabla</th>{ACTIONS.map(a=><th key={a}>{ACTION_LABELS[a]}</th>)}</tr></thead>
+            <tbody>{tables.map(t=><tr key={t.name}>
+              <td><Users size={14}/> {t.app_label||t.name.replace(/^nx_/,'')} <code>{t.name}</code></td>
+              {ACTIONS.map(a=><td key={a}><input type="checkbox" checked={matrix[t.name]?.[a]??false} onChange={()=>flip(t.name,a)}/></td>)}
             </tr>)}</tbody>
           </table>
-          {!modules.length&&<p className="empty-cell">Crea módulos primero.</p>}
+          {!tables.length&&<p className="empty-cell">Crea una tabla primero.</p>}
           <div className="perm-actions"><button className="button primary" onClick={()=>void save()} disabled={saving}>{saving?<LoaderCircle className="spin" size={15}/>:null}Guardar permisos</button></div></>:
           <p className="empty-cell">Selecciona un rol para editar su matriz de permisos.</p>}
         </div>

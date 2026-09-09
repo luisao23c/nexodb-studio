@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BuilderAuditLog;
-use App\Models\BuilderModule;
 use App\Services\AuditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -44,8 +43,33 @@ class DatabaseController extends Controller
     {
         $this->assertSafeTable($table);
         DB::table($table)->where('id', $id)->delete();
+        $this->audit->log('row.delete', 'row', "{$table}#{$id}");
 
         return response()->json(null, 204);
+    }
+
+    public function storeRow(Request $request, string $table): JsonResponse
+    {
+        $this->assertSafeTable($table);
+        $payload = $this->editableRowPayload($request, $table);
+        if (in_array('created_at', $this->tableColumns($table), true)) $payload['created_at'] = now();
+        if (in_array('updated_at', $this->tableColumns($table), true)) $payload['updated_at'] = now();
+        $id = DB::table($table)->insertGetId($payload);
+        $this->audit->log('row.create', 'row', "{$table}#{$id}", null, ['columns' => array_keys($payload)]);
+
+        return response()->json((array) DB::table($table)->where('id', $id)->first(), 201);
+    }
+
+    public function updateRow(Request $request, string $table, int $id): JsonResponse
+    {
+        $this->assertSafeTable($table);
+        abort_unless(DB::table($table)->where('id', $id)->exists(), 404, 'Registro no encontrado.');
+        $payload = $this->editableRowPayload($request, $table);
+        if (in_array('updated_at', $this->tableColumns($table), true)) $payload['updated_at'] = now();
+        DB::table($table)->where('id', $id)->update($payload);
+        $this->audit->log('row.update', 'row', "{$table}#{$id}", null, ['columns' => array_keys($payload)]);
+
+        return response()->json((array) DB::table($table)->where('id', $id)->first());
     }
 
     /** Run a single read-only SQL statement (SELECT / SHOW / DESCRIBE / EXPLAIN). */
@@ -74,9 +98,10 @@ class DatabaseController extends Controller
     {
         $this->assertSafeTable($table);
         $data = $request->validate([
-            'columns' => 'required|array|min:1', 'columns.*' => 'string|max:64',
-            'unique' => 'boolean', 'name' => 'nullable|string|max:64',
+            'columns' => 'required|array|min:1', 'columns.*' => ['string', 'max:64', 'regex:/^[a-zA-Z0-9_]+$/'],
+            'unique' => 'boolean', 'name' => ['nullable', 'string', 'max:64', 'regex:/^[a-zA-Z0-9_]+$/'],
         ]);
+        foreach ($data['columns'] as $column) abort_unless(\Illuminate\Support\Facades\Schema::hasColumn($table, $column), 422, "La columna {$column} no existe.");
         $name = ($data['name'] ?? '') ?: (($data['unique'] ?? false) ? 'uniq_' : 'idx_').implode('_', $data['columns']);
         $type = ($data['unique'] ?? false) ? 'UNIQUE' : 'INDEX';
         $cols = implode(', ', array_map(fn ($c) => '`'.str_replace('`', '', $c).'`', $data['columns']));
@@ -89,6 +114,7 @@ class DatabaseController extends Controller
     public function dropIndex(string $table, string $index): JsonResponse
     {
         $this->assertSafeTable($table);
+        abort_unless(preg_match('/^[a-zA-Z0-9_]+$/', $index), 422, 'Nombre de índice inválido.');
         abort_if(strtolower($index) === 'primary', 422, 'La llave primaria no se puede eliminar.');
         DB::statement("ALTER TABLE `{$table}` DROP INDEX `{$index}`");
         $this->audit->log('index.drop', 'index', "{$table}.{$index}", "ALTER TABLE `{$table}` DROP INDEX `{$index}`");
@@ -98,16 +124,15 @@ class DatabaseController extends Controller
 
     public function renameTable(Request $request, string $table): JsonResponse
     {
-        $this->assertSafeTable($table, allowManaged: true);
+        $this->assertSafeTable($table);
         $data = $request->validate(['name' => 'required|string|max:60']);
-        $module = BuilderModule::where('table_name', $table)->first();
-        $new = $module
-            ? app(\App\Services\DynamicTableService::class)->safeTableName($data['name'])
-            : 'nx_'.str_replace(['-', ' '], '_', strtolower($data['name']));
+        $new = app(\App\Services\DynamicTableService::class)->safeTableName($data['name']);
         abort_if(! preg_match('/^[a-z][a-z0-9_]{1,54}$/', $new), 422, 'Nombre de tabla inválido.');
         if ($new !== $table) {
             DB::statement("RENAME TABLE `{$table}` TO `{$new}`");
-            if ($module) $module->update(['table_name' => $new, 'slug' => \Illuminate\Support\Str::slug($data['name'])]);
+            DB::table('builder_permissions')->where('table_name', $table)->update(['table_name' => $new]);
+            DB::table('builder_charts')->where('table_name', $table)->update(['table_name' => $new]);
+            DB::table('builder_menu_items')->where('target_table', $table)->update(['target_table' => $new]);
             $this->audit->log('table.rename', 'table', "{$table} → {$new}", "RENAME TABLE `{$table}` TO `{$new}`");
         }
 
@@ -117,11 +142,9 @@ class DatabaseController extends Controller
     public function dropTable(string $table): JsonResponse
     {
         $this->assertSafeTable($table);
-        $module = BuilderModule::where('table_name', $table)->first();
-        if ($module) {
-            $module->fields()->delete();
-            $module->delete();
-        }
+        DB::table('builder_permissions')->where('table_name', $table)->delete();
+        DB::table('builder_charts')->where('table_name', $table)->delete();
+        DB::table('builder_menu_items')->where('target_table', $table)->update(['target_table' => null, 'active' => false]);
         DB::statement("DROP TABLE IF EXISTS `{$table}`");
         $this->audit->log('table.drop', 'table', $table, "DROP TABLE IF EXISTS `{$table}`");
 
@@ -168,20 +191,6 @@ class DatabaseController extends Controller
         $this->audit->log('column.drop', 'column', "{$table}.{$column}");
 
         return response()->json(null, 204);
-    }
-
-    /** Re-link a renamed managed table back to its module metadata (fixes drift). */
-    public function restoreTableName(string $table): JsonResponse
-    {
-        $this->assertSafeTable($table);
-        $module = BuilderModule::where('table_name', 'like', $table.'%')->first();
-        if ($module) {
-            $module->update(['table_name' => $table]);
-
-            return response()->json(['ok' => true, 'module' => $module->name, 'table' => $table]);
-        }
-
-        return response()->json(['ok' => false, 'message' => 'No se encontró un módulo cuyo nombre coincida.'], 404);
     }
 
     /** Create a brand-new nx_ table with initial columns. */
@@ -284,7 +293,8 @@ class DatabaseController extends Controller
             if (isset($row['id']) && DB::table($table)->where('id', $row['id'])->exists()) { $errors[] = "Línea {$line}: id {$row['id']} ya existe"; continue; }
             try {
                 if (isset($row['id'])) unset($row['id']);
-                $row['created_at'] = now(); $row['updated_at'] = now();
+                if (in_array('created_at', $tableColumns, true) && ! array_key_exists('created_at', $row)) $row['created_at'] = now();
+                if (in_array('updated_at', $tableColumns, true) && ! array_key_exists('updated_at', $row)) $row['updated_at'] = now();
                 DB::table($table)->insert($row);
                 $inserted++;
             } catch (\Throwable $e) { $errors[] = "Línea {$line}: ".$e->getMessage(); }
@@ -340,13 +350,39 @@ class DatabaseController extends Controller
         return response()->json(['database' => $database, 'tables' => $rows]);
     }
 
-    private function assertSafeTable(string $table, bool $allowManaged = false): void
+    private function assertSafeTable(string $table): void
     {
         if (! preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
             throw ValidationException::withMessages(['table' => 'Nombre de tabla inválido.']);
         }
-        if (! $allowManaged && ! str_starts_with($table, 'nx_')) {
+        if (! str_starts_with($table, 'nx_')) {
             throw ValidationException::withMessages(['table' => 'Sólo se permiten tablas con prefijo nx_.']);
         }
+        abort_unless(\Illuminate\Support\Facades\Schema::hasTable($table), 404, 'Tabla no encontrada.');
+    }
+
+    private function tableColumns(string $table): array
+    {
+        return collect(DB::select("SHOW COLUMNS FROM `{$table}`"))->pluck('Field')->all();
+    }
+
+    private function editableRowPayload(Request $request, string $table): array
+    {
+        $definitions = collect(DB::select("SHOW FULL COLUMNS FROM `{$table}`"));
+        $editable = $definitions->reject(fn ($column) => in_array($column->Field, ['id', 'created_at', 'updated_at', 'deleted_at'], true) || str_contains(strtolower((string) $column->Extra), 'auto_increment'));
+        $unknown = array_diff(array_keys($request->all()), $editable->pluck('Field')->all());
+        if ($unknown !== []) throw ValidationException::withMessages(['data' => 'Columnas no permitidas: '.implode(', ', $unknown)]);
+
+        $payload = [];
+        foreach ($editable as $column) {
+            if (! $request->exists($column->Field)) continue;
+            $value = $request->input($column->Field);
+            if ($value === '' && ($column->Null === 'YES' || $column->Default !== null)) $value = null;
+            if (preg_match('/^tinyint\(1\)/i', $column->Type)) $value = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? 0;
+            $payload[$column->Field] = $value;
+        }
+        if ($payload === []) throw ValidationException::withMessages(['data' => 'No hay valores para guardar.']);
+
+        return $payload;
     }
 }

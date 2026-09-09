@@ -5,10 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\BuilderMenu;
 use App\Models\BuilderMenuItem;
-use App\Models\BuilderRole;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -54,14 +54,16 @@ class MenuController extends Controller
         $data = $request->validate([
             'label' => 'required|string|max:80',
             'parent_id' => 'nullable|exists:builder_menu_items,id',
-            'target_type' => ['required', Rule::in(['module', 'page', 'chart_dashboard', 'url'])],
+            'target_type' => ['required', Rule::in(['table', 'page', 'chart_dashboard', 'url'])],
             'target_id' => 'nullable|integer',
+            'target_table' => 'nullable|string|max:64|required_if:target_type,table|regex:/^nx_[a-zA-Z0-9_]+$/',
             'url' => 'nullable|string|max:255|required_if:target_type,url',
             'icon' => 'nullable|string|max:30',
             'badge' => 'nullable|string|max:20',
             'sort_order' => 'nullable|integer|min:0',
             'role_ids' => 'nullable|array', 'role_ids.*' => 'integer|exists:builder_roles,id',
         ]);
+        if (($data['target_type'] ?? '') === 'table') abort_unless(Schema::hasTable($data['target_table']), 422, 'La tabla seleccionada no existe.');
 
         $item = BuilderMenuItem::create([
             'menu_id' => $menu->id,
@@ -70,6 +72,7 @@ class MenuController extends Controller
             'icon' => $data['icon'] ?? 'circle',
             'target_type' => $data['target_type'],
             'target_id' => $data['target_id'] ?? null,
+            'target_table' => $data['target_table'] ?? null,
             'url' => $data['url'] ?? null,
             'badge' => $data['badge'] ?? null,
             'sort_order' => $data['sort_order'] ?? 0,
@@ -84,12 +87,16 @@ class MenuController extends Controller
         abort_unless($item->menu_id === $menu->id, 404);
         $data = $request->validate([
             'label' => 'sometimes|string|max:80', 'icon' => 'nullable|string|max:30',
-            'target_type' => ['sometimes', Rule::in(['module', 'page', 'chart_dashboard', 'url'])],
-            'target_id' => 'nullable|integer', 'url' => 'nullable|string|max:255',
+            'target_type' => ['sometimes', Rule::in(['table', 'page', 'chart_dashboard', 'url'])],
+            'target_id' => 'nullable|integer', 'target_table' => 'nullable|string|max:64|regex:/^nx_[a-zA-Z0-9_]+$/', 'url' => 'nullable|string|max:255',
             'badge' => 'nullable|string|max:20', 'sort_order' => 'integer|min:0',
             'active' => 'boolean',
             'role_ids' => 'nullable|array', 'role_ids.*' => 'integer|exists:builder_roles,id',
         ]);
+        if (($data['target_type'] ?? $item->target_type) === 'table') {
+            $targetTable = $data['target_table'] ?? $item->target_table;
+            abort_unless($targetTable && Schema::hasTable($targetTable), 422, 'La tabla seleccionada no existe.');
+        }
         if (array_key_exists('role_ids', $data)) {
             $data['required_role_ids'] = $data['role_ids'];
             unset($data['role_ids']);
@@ -123,7 +130,7 @@ class MenuController extends Controller
                 return true;
             })->map(fn (BuilderMenuItem $i) => [
                 'id' => $i->id, 'label' => $i->label, 'icon' => $i->icon, 'parent_id' => $i->parent_id,
-                'target_type' => $i->target_type, 'target_id' => $i->target_id, 'url' => $i->url, 'badge' => $i->badge,
+                'target_type' => $i->target_type, 'target_id' => $i->target_id, 'target_table' => $i->target_table, 'url' => $i->url, 'badge' => $i->badge,
             ])->values();
 
             return ['id' => $menu->id, 'name' => $menu->name, 'slug' => $menu->slug, 'icon' => $menu->icon, 'items' => $items];

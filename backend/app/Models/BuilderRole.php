@@ -3,8 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class BuilderRole extends Model
 {
@@ -16,12 +16,12 @@ class BuilderRole extends Model
         return $this->hasMany(BuilderPermission::class, 'role_id');
     }
 
-    public function moduleIdsWith(string $action): array
+    public function tableNamesWith(string $action): array
     {
         if ($this->is_admin) {
-            return BuilderModule::pluck('id')->all();
+            return collect(DB::select('SHOW TABLES'))->map(fn ($row) => (string) array_values((array) $row)[0])->filter(fn ($table) => str_starts_with($table, 'nx_'))->values()->all();
         }
 
-        return $this->permissions()->where($action, true)->pluck('module_id')->all();
+        return $this->permissions()->where($action, true)->pluck('table_name')->all();
     }
 }

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Braces, ChevronLeft, ChevronRight, Database, Download, Eraser, GitBranch, Key, LoaderCircle, Pencil, Play, Plus, RefreshCw, Search, Sigma, Table2, Trash2, Upload, X, History as HistoryIcon } from 'lucide-react';
+import { AlertTriangle, Braces, ChevronLeft, ChevronRight, Code2, Database, Download, Eraser, GitBranch, Key, LoaderCircle, Pencil, Play, Plus, RefreshCw, Search, Sigma, Table2, Trash2, Upload, X, History as HistoryIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { AuditTab, DbDashboard } from './DbDashboard';
-import type { DbOverviewTable, SchemaColumn, SchemaRelationModule, SchemaTable, SchemaTableDetail } from '../types';
+import type { DbOverviewTable, RelationOption, SchemaColumn, SchemaRelationModule, SchemaTable, SchemaTableDetail } from '../types';
 
 const DDL_TYPES = [
   { v:'string', l:'VARCHAR (texto corto)' }, { v:'text', l:'TEXT (texto largo)' },
@@ -69,7 +69,7 @@ export function SchemaExplorer({ onChanged}:{onChanged?:()=>void}) {
        error?<div className="error-box">{error}<button className="button ghost" onClick={()=>void load(true)}>Reintentar</button></div>:
        tab==='dashboard'?<DbDashboard/>:
        tab==='audit'?<AuditTab/>:
-       tab==='structure'&&(selected&&detail)?<StructureTab detail={detail} stats={stats.get(selected)} onRefresh={refreshDetail}/>:
+       tab==='structure'&&(selected&&detail)?<StructureTab detail={detail} stats={stats.get(selected)} onRefresh={refreshDetail} onTableChanged={async next=>{await load(false);if(next)setSelected(next);}}/>:
        tab==='browse'&&selected?<BrowseTab table={selected} columns={detail?.columns??[]} onChanged={refreshDetail}/>:
        tab==='sql'?<SqlTab/>:
         tab==='relations'?<RelationsGraph relations={relations} tables={tables}/>:
@@ -80,7 +80,7 @@ export function SchemaExplorer({ onChanged}:{onChanged?:()=>void}) {
 }
 
 /* ================= Structure tab: columns DDL + indexes + table actions ================= */
-function StructureTab({detail,stats,onRefresh}:{detail:SchemaTableDetail;stats?:DbOverviewTable;onRefresh:()=>Promise<void>}){
+function StructureTab({detail,stats,onRefresh,onTableChanged}:{detail:SchemaTableDetail;stats?:DbOverviewTable;onRefresh:()=>Promise<void>;onTableChanged:(next?:string)=>Promise<void>}){
   const [colModal,setColModal] = useState<{mode:'add'|'edit';column?:SchemaColumn}|null>(null);
   const [idxModal,setIdxModal] = useState(false);
   const [busy,setBusy] = useState(false);
@@ -90,13 +90,12 @@ function StructureTab({detail,stats,onRefresh}:{detail:SchemaTableDetail;stats?:
   async function dropIndex(name:string){ if(!confirm(`¿Eliminar el índice "${name}"?`))return; setBusy(true);
     try{ await api.dropDbIndex(detail.table,name); await onRefresh(); }finally{ setBusy(false); } }
   async function renameTable(){ const n=prompt('Nuevo nombre de la tabla:',detail.table.replace(/^nx_/,'')); if(!n?.trim())return; setBusy(true);
-    try{ const r=await api.renameDbTable(detail.table,n.trim()); alert(`Tabla renombrada a ${r.table}. Si era un módulo, usa "Vincular módulo" para reconciliar los metadatos.`); await onRefresh(); }finally{ setBusy(false); } }
-  async function linkModule(){ try{ await api.restoreTableName(detail.table); alert('Vinculado al módulo correspondiente.'); await onRefresh(); }catch(e){ alert((e as Error).message); } }
+    try{ const r=await api.renameDbTable(detail.table,n.trim()); alert(`Tabla renombrada a ${r.table}.`); await onTableChanged(r.table); }finally{ setBusy(false); } }
   async function truncate(){ if(!confirm(`¿Vaciar TODOS los registros de ${detail.table}? (La estructura se conserva)`))return; setBusy(true);
     try{ await api.truncateDbTable(detail.table); await onRefresh(); }finally{ setBusy(false); } }
   async function dropTable(){ if(!confirm(`¿ELIMINAR la tabla ${detail.table} con todos sus datos? Esta acción es irreversible.`))return;
     if(prompt(`Escribe ELIMINAR para confirmar:`)!=='ELIMINAR')return; setBusy(true);
-    try{ await api.dropDbTable(detail.table); await onRefresh(); }finally{ setBusy(false); } }
+    try{ await api.dropDbTable(detail.table); await onTableChanged(); }finally{ setBusy(false); } }
 
   return <div className="panel structure-panel">
     <div className="panel-head slim">
@@ -140,6 +139,7 @@ function BrowseTab({table,columns,onChanged}:{table:string;columns:SchemaColumn[
   const [page,setPage] = useState<{data:Record<string,unknown>[];total:number;current_page:number;last_page:number}|null>(null);
   const [pn,setPn] = useState(1); const [search,setSearch] = useState(''); const [loading,setLoading] = useState(true);
   const [importResult,setImportResult] = useState<{inserted:number;errors:string[]}|null>(null);
+  const [editing,setEditing] = useState<Record<string,unknown>|null|undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
   const load = useCallback(async()=>{ setLoading(true); try{ setPage(await api.browse(table,pn,search)); }finally{ setLoading(false); } },[table,pn,search]);
   useEffect(()=>{void load();},[load]);
@@ -154,6 +154,7 @@ function BrowseTab({table,columns,onChanged}:{table:string;columns:SchemaColumn[
       <label className="search"><Search size={15}/><input value={search} onChange={e=>{setSearch(e.target.value);setPn(1);}} placeholder="Buscar en todas las columnas…"/></label>
       <div className="browse-actions">
         <span>{page?.total??0} registros</span>
+        <button className="button primary compact-button" onClick={()=>setEditing(null)}><Plus size={15}/>Nuevo registro</button>
         <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={e=>{const f=e.target.files?.[0]; if(f) void doImport(f); e.target.value='';}}/>
         <button className="icon-button" title="Importar CSV" onClick={()=>fileRef.current?.click()}><Upload size={15}/></button>
         <button className="icon-button" title="Exportar CSV" onClick={()=>void api.exportTable(table,'csv')}><Download size={15}/></button>
@@ -171,14 +172,38 @@ function BrowseTab({table,columns,onChanged}:{table:string;columns:SchemaColumn[
         page?.data.length?page.data.map(row=><tr key={String(row.id)}>
           <td><span className="record-id">#{String(row.id).padStart(3,'0')}</span></td>
           {cols.filter(c=>c.name!=='id').map(c=><td key={c.name}>{row[c.name]===null?'—':String(row[c.name])}</td>)}
-          <td><button className="row-delete" onClick={()=>void del(Number(row.id))}><Trash2 size={13}/></button></td>
+          <td><div className="row-actions"><button title="Editar" onClick={()=>setEditing(row)}><Pencil size={13}/></button><button className="danger" title="Eliminar" onClick={()=>void del(Number(row.id))}><Trash2 size={13}/></button></div></td>
         </tr>):<tr><td colSpan={cols.length+1} className="empty-cell">Sin registros.</td></tr>}
       </tbody>
     </table></div>
     {page&&page.last_page>1&&<footer className="pagination"><span>Página {page.current_page} de {page.last_page}</span><div>
       <button disabled={page.current_page===1} onClick={()=>setPn(p=>p-1)}><ChevronLeft/></button><button disabled={page.current_page===page.last_page} onClick={()=>setPn(p=>p+1)}><ChevronRight/></button>
     </div></footer>}
+    {editing!==undefined&&<RowModal table={table} columns={columns} row={editing} onClose={()=>setEditing(undefined)} onDone={async()=>{setEditing(undefined);await load();await onChanged();}}/>}
   </div>;
+}
+
+function RowModal({table,columns,row,onClose,onDone}:{table:string;columns:SchemaColumn[];row:Record<string,unknown>|null;onClose:()=>void;onDone:()=>Promise<void>}){
+  const editable=columns.filter(c=>!['id','created_at','updated_at','deleted_at'].includes(c.name)&&!c.extra?.includes('auto_increment'));
+  const [form,setForm]=useState<Record<string,unknown>>(()=>Object.fromEntries(editable.map(c=>[c.name,row?.[c.name]??c.default??''])));
+  const [relations,setRelations]=useState<Record<string,RelationOption[]>>({});
+  const [busy,setBusy]=useState(false); const [error,setError]=useState('');
+  useEffect(()=>{void api.foreignKeys(table).then(async result=>{
+    const pairs=await Promise.all(result.foreign_keys.map(async fk=>[fk.column_name,await api.relationOptions(table,fk.column_name)] as const));
+    setRelations(Object.fromEntries(pairs));
+  }).catch(()=>{});},[table]);
+  function set(name:string,value:unknown){setForm(current=>({...current,[name]:value}));}
+  async function submit(e:React.FormEvent){e.preventDefault();setBusy(true);setError('');try{if(row)await api.updateRow(table,Number(row.id),form);else await api.createRow(table,form);await onDone();}catch(err){setError((err as Error).message);}finally{setBusy(false);}}
+  return <ModalShell title={row?`Editar registro #${String(row.id)}`:`Nuevo registro en ${table}`} onClose={onClose} wide>
+    <form className="modal-body" onSubmit={submit}><div className="record-editor-grid">{editable.map(c=>{
+      const isBool=/^tinyint\(1\)/i.test(c.type); const isLong=/text|json/.test(c.type); const isDate=/^date$/.test(c.type); const isDateTime=/datetime|timestamp/.test(c.type); const isNumber=/int|decimal|double|float/.test(c.type);
+      return <label className={`control ${isLong?'span-two':''}`} key={c.name}><span>{c.name}{!c.nullable&&c.default===null?<b> *</b>:null}</span>
+        {relations[c.name]?<select value={String(form[c.name]??'')} onChange={e=>set(c.name,e.target.value)} required={!c.nullable}><option value="">{c.nullable?'Sin relación':'Seleccionar…'}</option>{relations[c.name].map(option=><option key={String(option.id)} value={option.id}>{option.label} · #{option.id}</option>)}</select>:
+         isBool?<select value={form[c.name]?"1":"0"} onChange={e=>set(c.name,e.target.value==='1'?1:0)}><option value="1">Sí</option><option value="0">No</option></select>:
+         isLong?<textarea rows={4} value={String(form[c.name]??'')} onChange={e=>set(c.name,e.target.value)} placeholder={c.type.includes('json')?'{"clave":"valor"}':''}/>:
+         <input type={isDate?'date':isDateTime?'datetime-local':isNumber?'number':c.name.toLowerCase().includes('password')?'password':'text'} step={/decimal|double|float/.test(c.type)?'any':undefined} value={String(form[c.name]??'')} onChange={e=>set(c.name,e.target.value)} required={!c.nullable&&c.default===null}/>}<small>{c.type}{c.nullable?' · acepta null':''}</small></label>;
+    })}</div>{error&&<p className="error-box">{error}</p>}<div className="modal-actions"><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary" disabled={busy}>{busy?<LoaderCircle className="spin" size={15}/>:null}{row?'Guardar cambios':'Crear registro'}</button></div></form>
+  </ModalShell>;
 }
 
 /* ================= SQL console with autocomplete ================= */
@@ -194,7 +219,7 @@ function SqlTab(){
 
   useEffect(()=>{ api.schemaTables().then(r=>{ tablesRef.current=r.tables.map(t=>t.name); }).catch(()=>{}); },[]);
 
-  const SQL_KEYWORDS = ['SELECT','FROM','WHERE','AND','OR','JOIN','LEFT','RIGHT','INNER','ON','GROUP BY','ORDER BY','HAVING','LIMIT','OFFSET','INSERT','INTO','VALUES','UPDATE','SET','DELETE','CREATE','TABLE','ALTER','DROP','INDEX','SHOW','TABLES','DESCRIBE','EXPLAIN','DISTINCT','AS','IN','NOT','NULL','IS','LIKE','BETWEEN','EXISTS','COUNT','SUM','AVG','MIN','MAX','ROUND','COUNT','DISTINCT','ASC','DESC','LIMIT','OFFSET','INNER JOIN','LEFT JOIN','RIGHT JOIN','CROSS JOIN','UNION','ALL'];
+  const SQL_KEYWORDS = ['SELECT','FROM','WHERE','AND','OR','JOIN','LEFT','RIGHT','INNER','ON','GROUP BY','ORDER BY','HAVING','LIMIT','OFFSET','SHOW','TABLES','DESCRIBE','EXPLAIN','DISTINCT','AS','IN','NOT','NULL','IS','LIKE','BETWEEN','EXISTS','COUNT','SUM','AVG','MIN','MAX','ROUND','ASC','DESC','INNER JOIN','LEFT JOIN','RIGHT JOIN','CROSS JOIN','UNION','ALL'];
 
   function getSuggestions(word:string){
     if(!word||word.length<1) return[];
@@ -503,5 +528,3 @@ function RelationsGraph({relations,tables}:{relations:SchemaRelationModule[];tab
     }
   </div>;
 }
-
-

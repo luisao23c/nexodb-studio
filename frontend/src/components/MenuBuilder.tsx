@@ -1,17 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ChevronDown, Circle, FolderTree, Link, LoaderCircle, Plus, Route, Save, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import type { Chart, Menu, MenuItem, Module, Role } from '../types';
+import type { Chart, Menu, MenuItem, Role, SchemaTable } from '../types';
 
-export function MenuBuilder({modules,charts}: {modules:Module[];charts:Chart[]}) {
+export function MenuBuilder({tables}: {tables:SchemaTable[]}) {
   const [menus,setMenus] = useState<Menu[]>([]);
   const [roles,setRoles] = useState<Role[]>([]);
+  const [charts,setCharts] = useState<Chart[]>([]);
   const [activeId,setActiveId] = useState<number|null>(null);
   const [newMenu,setNewMenu] = useState('');
   const [editing,setEditing] = useState<MenuItem|null>(null);
   const [loading,setLoading] = useState(true);
 
-  async function load(){ setLoading(true); try{ setMenus(await api.menus()); setRoles(await api.roles()); setActiveId(c=>c??menus[0]?.id??null);}finally{setLoading(false);} }
+  async function load(){ setLoading(true); try{ const [nextMenus,nextRoles,nextCharts]=await Promise.all([api.menus(),api.roles(),api.charts()]); setMenus(nextMenus);setRoles(nextRoles);setCharts(nextCharts);setActiveId(c=>c??nextMenus[0]?.id??null);}finally{setLoading(false);} }
   useEffect(()=>{void load();},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const menu = menus.find(m=>m.id===activeId)??null;
 
@@ -55,7 +56,7 @@ export function MenuBuilder({modules,charts}: {modules:Module[];charts:Chart[]})
           </div>)}
           {!menus.length&&<p className="empty-cell">Crea tu primer menú para estructurar la app.</p>}
         </div>
-        <ItemForm key={editing?.id??'new'} menu={menu} editing={editing} roles={roles} modules={modules} charts={charts} onSave={saveItem} onCancel={()=>setEditing(null)}/>
+        <ItemForm key={editing?.id??'new'} menu={menu} editing={editing} roles={roles} tables={tables} charts={charts} onSave={saveItem} onCancel={()=>setEditing(null)}/>
       </div>
     </section>;
 }
@@ -64,24 +65,24 @@ function describeTarget(item:MenuItem){
   if(item.target_type==='url') return item.url??'';
   if(item.target_type==='chart_dashboard') return 'Dashboard de gráficas';
   if(item.target_type==='page') return `Página #${item.target_id}`;
-  return `Módulo #${item.target_id}`;
+  return `Tabla ${item.target_table??'sin destino'}`;
 }
 
-function ItemForm({menu,editing,roles,modules,charts,onSave,onCancel}:{menu:Menu|null;editing:MenuItem|null;roles:Role[];modules:Module[];charts:Chart[];onSave:(item:Partial<MenuItem>&{role_ids?:number[]})=>Promise<void>;onCancel:()=>void}){
+function ItemForm({menu,editing,roles,tables,charts,onSave,onCancel}:{menu:Menu|null;editing:MenuItem|null;roles:Role[];tables:SchemaTable[];charts:Chart[];onSave:(item:Partial<MenuItem>&{role_ids?:number[]})=>Promise<void>;onCancel:()=>void}){
   const [label,setLabel] = useState(editing?.label??'');
-  const [targetType,setTargetType] = useState(editing?.target_type??'module');
-  const [targetId,setTargetId] = useState<string>(String(editing?.target_id??''));
+  const [targetType,setTargetType] = useState(editing?.target_type??'table');
+  const [targetId,setTargetId] = useState<string>(String(editing?.target_type==='table'?(editing.target_table??''):(editing?.target_id??'')));
   const [url,setUrl] = useState(editing?.url??'');
   const [badge,setBadge] = useState(editing?.badge??'');
   const [roleIds,setRoleIds] = useState<number[]>(editing?.required_role_ids??[]);
   const [saving,setSaving] = useState(false);
 
   async function submit(e:FormEvent){ e.preventDefault(); setSaving(true); try{
-    await onSave({ label, target_type:targetType, target_id:targetId?Number(targetId):null, url:targetType==='url'?url:null, badge:badge||null, role_ids:roleIds });
+    await onSave({ label, target_type:targetType, target_id:targetType==='chart_dashboard'||targetType==='page'?Number(targetId)||null:null, target_table:targetType==='table'?targetId:null, url:targetType==='url'?url:null, badge:badge||null, role_ids:roleIds });
   }finally{ setSaving(false); } }
 
   if(!menu) return <aside className="panel preview-panel"><p className="empty-mini">Selecciona o crea un menú.</p></aside>;
-  const options = targetType==='module'?modules.map(m=>({v:String(m.id),l:m.name})):targetType==='page'?[]:targetType==='chart_dashboard'?charts.map(c=>({v:String(c.id),l:c.name})):[{v:'',l:'—'}];
+  const options = targetType==='table'?tables.map(t=>({v:t.name,l:`${t.app_label||t.name.replace(/^nx_/,'')} · ${t.name}`})):targetType==='page'?[]:targetType==='chart_dashboard'?charts.map(c=>({v:String(c.id),l:c.name})):[{v:'',l:'—'}];
 
   return <aside className="panel preview-panel" id="item-form">
     <span className="kicker"><Link size={13}/>{editing?'Editar elemento':'Nuevo elemento'}</span>
@@ -89,7 +90,7 @@ function ItemForm({menu,editing,roles,modules,charts,onSave,onCancel}:{menu:Menu
     <form className="modal-body no-pad" onSubmit={submit}>
       <label className="control"><span>Etiqueta visible</span><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Ej. Usuarios" required/></label>
       <label className="control"><span>Apunta a</span><select value={targetType} onChange={e=>{setTargetType(e.target.value as typeof targetType);setTargetId('');}}>
-        <option value="module">Módulo (CRUD)</option><option value="page">Página personalizada</option><option value="chart_dashboard">Dashboard de gráficas</option><option value="url">URL externa</option>
+        <option value="table">Tabla de datos</option><option value="page">Página personalizada</option><option value="chart_dashboard">Dashboard de gráficas</option><option value="url">URL externa</option>
       </select></label>
       {targetType!=='url'&&targetType!=='page'&&<label className="control"><span>Destino</span><select value={targetId} onChange={e=>setTargetId(e.target.value)} required>
         <option value="">Seleccionar…</option>{options.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select></label>}

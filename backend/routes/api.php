@@ -2,11 +2,8 @@
 
 use App\Http\Controllers\Api\ChartController;
 use App\Http\Controllers\Api\DatabaseController;
-use App\Http\Controllers\Api\FieldController;
 use App\Http\Controllers\Api\MenuController;
-use App\Http\Controllers\Api\ModuleController;
 use App\Http\Controllers\Api\PageController;
-use App\Http\Controllers\Api\RecordController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SchemaExplorerController;
 use Illuminate\Support\Facades\Route;
@@ -17,22 +14,6 @@ Route::get('/health', fn () => ['ok' => true, 'name' => 'NexoDB Studio']);
 Route::get('/pages/{page}/render', [PageController::class, 'show'])->whereNumber('page');
 
 Route::middleware(['builder.admin', 'throttle:api'])->prefix('builder')->group(function () {
-    Route::get('/modules', [ModuleController::class, 'index']);
-    Route::post('/modules', [ModuleController::class, 'store']);
-    Route::get('/modules/{module}', [ModuleController::class, 'show']);
-    Route::put('/modules/{module}', [ModuleController::class, 'update']);
-    Route::post('/modules/{module}/fields', [FieldController::class, 'store']);
-    Route::put('/modules/{module}/fields/{field}', [FieldController::class, 'update']);
-    Route::put('/modules/{module}/fields/{field}/modify', [FieldController::class, 'modify']);
-    Route::put('/modules/{module}/fields/{field}/rename', [FieldController::class, 'rename']);
-    Route::delete('/modules/{module}/fields/{field}', [FieldController::class, 'destroy']);
-    Route::get('/modules/{module}/options', [RecordController::class, 'options']);
-    Route::get('/modules/{module}/records', [RecordController::class, 'index']);
-    Route::post('/modules/{module}/records', [RecordController::class, 'store']);
-    Route::get('/modules/{module}/records/{record}', [RecordController::class, 'show']);
-    Route::put('/modules/{module}/records/{record}', [RecordController::class, 'update']);
-    Route::delete('/modules/{module}/records/{record}', [RecordController::class, 'destroy']);
-
     // Database explorer
     Route::get('/schema/tables', [SchemaExplorerController::class, 'index']);
     Route::get('/schema/tables/{table}', [SchemaExplorerController::class, 'show'])->where('table', '[a-zA-Z0-9_]+');
@@ -40,17 +21,18 @@ Route::middleware(['builder.admin', 'throttle:api'])->prefix('builder')->group(f
     Route::get('/db/overview', [DatabaseController::class, 'overview']);
     Route::get('/db/dashboard', [DatabaseController::class, 'dashboard']);
     Route::get('/db/audit', [DatabaseController::class, 'auditIndex']);
-    Route::post('/db/import/{table}', [DatabaseController::class, 'import'])->where('table', '[a-zA-Z0-9_]+');
+    Route::post('/db/{table}/import', [DatabaseController::class, 'import'])->where('table', '[a-zA-Z0-9_]+');
     Route::get('/db/{table}/export', [DatabaseController::class, 'export'])->where('table', '[a-zA-Z0-9_]+');
     Route::post('/db/tables', [DatabaseController::class, 'createTable']);
     Route::post('/db/{table}/truncate', [DatabaseController::class, 'truncate'])->where('table', '[a-zA-Z0-9_]+');
     Route::get('/db/{table}/browse', [DatabaseController::class, 'browse'])->where('table', '[a-zA-Z0-9_]+');
-    Route::delete('/db/{table}/rows/{id}', [DatabaseController::class, 'deleteRow'])->where('table', '[a-zA-Z0-9_]+');
+    Route::post('/db/{table}/rows', [DatabaseController::class, 'storeRow'])->where('table', '[a-zA-Z0-9_]+');
+    Route::put('/db/{table}/rows/{id}', [DatabaseController::class, 'updateRow'])->where('table', '[a-zA-Z0-9_]+')->whereNumber('id');
+    Route::delete('/db/{table}/rows/{id}', [DatabaseController::class, 'deleteRow'])->where('table', '[a-zA-Z0-9_]+')->whereNumber('id');
     Route::post('/db/query', [DatabaseController::class, 'query']);
     Route::post('/db/{table}/indexes', [DatabaseController::class, 'addIndex'])->where('table', '[a-zA-Z0-9_]+');
     Route::delete('/db/{table}/indexes/{index}', [DatabaseController::class, 'dropIndex'])->where('table', '[a-zA-Z0-9_]+');
     Route::put('/db/{table}/rename', [DatabaseController::class, 'renameTable'])->where('table', '[a-zA-Z0-9_]+');
-    Route::put('/db/{table}/restore-name', [DatabaseController::class, 'restoreTableName'])->where('table', '[a-zA-Z0-9_]+');
     Route::delete('/db/{table}', [DatabaseController::class, 'dropTable'])->where('table', '[a-zA-Z0-9_]+');
     Route::post('/db/{table}/columns', [DatabaseController::class, 'addColumn'])->where('table', '[a-zA-Z0-9_]+');
     Route::put('/db/{table}/columns/{column}', [DatabaseController::class, 'modifyColumn'])->where('table', '[a-zA-Z0-9_]+')->where('column', '[a-zA-Z0-9_]+');
@@ -58,6 +40,7 @@ Route::middleware(['builder.admin', 'throttle:api'])->prefix('builder')->group(f
 
     // Foreign keys
     Route::get('/db/{table}/foreign-keys', [SchemaExplorerController::class, 'foreignKeys'])->where('table', '[a-zA-Z0-9_]+');
+    Route::get('/db/{table}/columns/{column}/options', [SchemaExplorerController::class, 'relationOptions'])->where('table', '[a-zA-Z0-9_]+')->where('column', '[a-zA-Z0-9_]+');
     Route::post('/db/{table}/foreign-keys', [SchemaExplorerController::class, 'addForeignKey'])->where('table', '[a-zA-Z0-9_]+');
     Route::delete('/db/{table}/foreign-keys/{column}', [SchemaExplorerController::class, 'dropForeignKey'])->where('table', '[a-zA-Z0-9_]+')->where('column', '[a-zA-Z0-9_]+');
 

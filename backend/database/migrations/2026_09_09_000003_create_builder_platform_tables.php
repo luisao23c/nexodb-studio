@@ -28,8 +28,9 @@ return new class extends Migration {
             $table->foreignId('parent_id')->nullable()->constrained('builder_menu_items')->nullOnDelete();
             $table->string('label');
             $table->string('icon')->default('circle');
-            $table->string('target_type')->default('module');
+            $table->string('target_type')->default('table');
             $table->unsignedBigInteger('target_id')->nullable();
+            $table->string('target_table')->nullable();
             $table->string('url')->nullable();
             $table->string('badge')->nullable();
             $table->unsignedInteger('sort_order')->default(0);
@@ -51,19 +52,19 @@ return new class extends Migration {
         Schema::create('builder_permissions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('role_id')->constrained('builder_roles')->cascadeOnDelete();
-            $table->foreignId('module_id')->constrained('builder_modules')->cascadeOnDelete();
+            $table->string('table_name');
             $table->boolean('can_read')->default(true);
             $table->boolean('can_create')->default(false);
             $table->boolean('can_update')->default(false);
             $table->boolean('can_delete')->default(false);
             $table->timestamps();
-            $table->unique(['role_id', 'module_id']);
+            $table->unique(['role_id', 'table_name']);
         });
 
         Schema::create('builder_charts', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->foreignId('module_id')->constrained('builder_modules')->cascadeOnDelete();
+            $table->string('table_name');
             $table->string('chart_type')->default('bar');
             $table->string('label_field');
             $table->string('value_field')->nullable();
