@@ -4,16 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BuilderModule;
+use App\Services\AuditService;
 use App\Services\DynamicTableService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class ModuleController extends Controller
 {
-    public function __construct(private DynamicTableService $tables) {}
+    public function __construct(private DynamicTableService $tables, private AuditService $audit) {}
 
     public function index(): JsonResponse
     {
@@ -27,11 +27,11 @@ class ModuleController extends Controller
         $slug = Str::slug($data['name']);
         if (Schema::hasTable($tableName)) return response()->json(['message'=>'La tabla física ya existe.'], 422);
 
-        $module = DB::transaction(function () use ($data, $tableName, $slug) {
-            $module = BuilderModule::create([...$data, 'slug'=>$slug, 'table_name'=>$tableName]);
-            $this->tables->createTable($module);
-            return $module;
-        });
+        // DDL implícitamente confirma en MySQL: primero la tabla física, luego el metadato.
+        BuilderModule::create([...$data, 'slug'=>$slug, 'table_name'=>$tableName]);
+        $module = BuilderModule::where('table_name', $tableName)->firstOrFail();
+        $this->tables->createTable($module);
+        $this->audit->log('module.create', 'table', $tableName);
         return response()->json($module->load('fields'), 201);
     }
 
