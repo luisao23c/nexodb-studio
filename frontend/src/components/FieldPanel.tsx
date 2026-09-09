@@ -1,0 +1,34 @@
+import { useMemo, useState, type FormEvent } from 'react';
+import { Braces, GripVertical, Link2, LoaderCircle, Plus, Settings2 } from 'lucide-react';
+import { api } from '../api/client';
+import type { DataType, Field, InputType, Module } from '../types';
+
+const TYPE_INPUTS:Record<DataType,InputType[]> = {
+  string:['text','email','select','autocomplete'], text:['textarea'], integer:['number'], decimal:['number'],
+  boolean:['checkbox'], date:['date'], datetime:['datetime-local'], relation:['select','autocomplete']
+};
+const TYPE_LABELS:Record<DataType,string>={string:'Texto corto',text:'Texto largo',integer:'Número entero',decimal:'Decimal / moneda',boolean:'Sí / No',date:'Fecha',datetime:'Fecha y hora',relation:'Relación'};
+
+export function FieldPanel({module,modules,onRefresh}:{module:Module;modules:Module[];onRefresh:()=>Promise<void>}) {
+  const [open,setOpen]=useState(false); const [saving,setSaving]=useState(false); const [error,setError]=useState('');
+  const [form,setForm]=useState({name:'',label:'',data_type:'string' as DataType,input_type:'text' as InputType,required:false,nullable:true,unique:false,show_in_table:true,show_in_form:true,searchable:true,related_module_id:'',display_column:'',options:''});
+  const possibleInputs=useMemo(()=>TYPE_INPUTS[form.data_type], [form.data_type]);
+  function changeType(type:DataType){setForm(v=>({...v,data_type:type,input_type:TYPE_INPUTS[type][0],related_module_id:type==='relation'?v.related_module_id:''}))}
+  async function submit(e:FormEvent){e.preventDefault();setSaving(true);setError('');try{await api.createField(module.id,{...form,related_module_id:form.related_module_id?Number(form.related_module_id):null,options:form.options?form.options.split(',').map(v=>v.trim()).filter(Boolean):null});setForm({name:'',label:'',data_type:'string',input_type:'text',required:false,nullable:true,unique:false,show_in_table:true,show_in_form:true,searchable:true,related_module_id:'',display_column:'',options:''});setOpen(false);await onRefresh()}catch(err){setError((err as Error).message)}finally{setSaving(false)}}
+  async function toggle(field:Field,key:'show_in_table'|'show_in_form'|'searchable'){await api.updateField(module.id,field.id,{[key]:!field[key]});await onRefresh()}
+
+  return <div className="designer-grid">
+    <section className="panel fields-panel">
+      <div className="panel-head"><div><span className="kicker">Esquema físico</span><h2>Campos de {module.name}</h2></div><button className="button primary" onClick={()=>setOpen(!open)}><Plus size={17}/>Nuevo campo</button></div>
+      {open&&<form className="field-builder" onSubmit={submit}>
+        <div className="builder-title"><Braces size={18}/><strong>Definir campo</strong></div>
+        <div className="form-grid three"><label className="control"><span>Etiqueta</span><input value={form.label} onChange={e=>setForm({...form,label:e.target.value})} placeholder="Nombre completo" required/></label><label className="control"><span>Nombre técnico</span><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="nombre_completo" required/></label><label className="control"><span>Tipo de dato</span><select value={form.data_type} onChange={e=>changeType(e.target.value as DataType)}>{Object.entries(TYPE_LABELS).map(([v,l])=><option value={v} key={v}>{l}</option>)}</select></label></div>
+        <div className="form-grid three"><label className="control"><span>Componente</span><select value={form.input_type} onChange={e=>setForm({...form,input_type:e.target.value as InputType})}>{possibleInputs.map(v=><option key={v}>{v}</option>)}</select></label>{form.data_type==='relation'?<><label className="control"><span>Módulo relacionado</span><select required value={form.related_module_id} onChange={e=>setForm({...form,related_module_id:e.target.value})}><option value="">Seleccionar…</option>{modules.filter(m=>m.id!==module.id).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label><label className="control"><span>Campo visible</span><input value={form.display_column} onChange={e=>setForm({...form,display_column:e.target.value})} placeholder="nombre"/></label></>:<label className="control span-two"><span>Opciones (para select)</span><input value={form.options} onChange={e=>setForm({...form,options:e.target.value})} placeholder="Activo, Inactivo, Pendiente"/></label>}</div>
+        <div className="toggle-row">{([['required','Obligatorio'],['unique','Valor único'],['show_in_table','Mostrar en tabla'],['show_in_form','Mostrar en formulario'],['searchable','Permitir búsqueda']] as const).map(([key,label])=><label className="check" key={key}><input type="checkbox" checked={form[key]} onChange={e=>setForm({...form,[key]:e.target.checked,...(key==='required'?{nullable:!e.target.checked}:{})})}/><span>{label}</span></label>)}</div>
+        {error&&<p className="error-box">{error}</p>}<div className="builder-actions"><button type="button" className="button ghost" onClick={()=>setOpen(false)}>Cancelar</button><button className="button primary" disabled={saving}>{saving?<LoaderCircle className="spin" size={16}/>:null}Crear campo físico</button></div>
+      </form>}
+      <div className="field-list"><div className="field-row locked"><GripVertical/><span className="field-type">ID</span><div><strong>id</strong><small>Llave primaria · automático</small></div><span className="status-pill">Sistema</span></div>{module.fields.map(field=><div className="field-row" key={field.id}><GripVertical className="drag"/><span className="field-type">{field.data_type==='relation'?<Link2 size={16}/>:field.data_type.slice(0,3).toUpperCase()}</span><div className="field-name"><strong>{field.label}</strong><small>{field.name} · {TYPE_LABELS[field.data_type]}{field.related_module?` → ${field.related_module.name}`:''}</small></div><div className="visibility"><button className={field.show_in_table?'active':''} onClick={()=>toggle(field,'show_in_table')}>Tabla</button><button className={field.show_in_form?'active':''} onClick={()=>toggle(field,'show_in_form')}>Form</button><button className={field.searchable?'active':''} onClick={()=>toggle(field,'searchable')}>Buscar</button></div><Settings2 size={17} className="muted"/></div>)}</div>
+    </section>
+    <aside className="panel preview-panel"><span className="kicker">Vista previa</span><h3>Formulario generado</h3><div className="mini-form">{module.fields.filter(f=>f.show_in_form).length?module.fields.filter(f=>f.show_in_form).map(f=><label key={f.id}><span>{f.label}{f.required&&' *'}</span><div className={`fake-input ${f.input_type}`}>{f.input_type==='checkbox'?'Activar':f.data_type==='relation'?'Buscar opción…':`Capturar ${f.label.toLowerCase()}…`}</div></label>):<div className="empty-mini">Agrega campos para construir el formulario.</div>}</div></aside>
+  </div>;
+}

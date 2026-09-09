@@ -33,6 +33,7 @@ nexodb-studio/
 ### 1. Base de datos
 
 ```bash
+cp .env.example .env
 docker compose up -d mysql
 ```
 
@@ -53,7 +54,7 @@ Si usas el `docker-compose.yml`, configura en `backend/.env`:
 DB_PORT=3307
 DB_DATABASE=nexodb
 DB_USERNAME=nexodb
-DB_PASSWORD=nexodb_secret
+DB_PASSWORD=usa-el-valor-MYSQL_PASSWORD-del-env-raiz
 BUILDER_ADMIN_KEY=una-clave-privada
 ```
 
