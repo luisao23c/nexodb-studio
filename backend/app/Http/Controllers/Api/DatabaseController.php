@@ -215,10 +215,16 @@ class DatabaseController extends Controller
             'add_timestamps' => 'boolean',
             'add_soft_deletes' => 'boolean',
             'use_uuid_pk' => 'boolean',
+            'engine' => ['nullable', \Illuminate\Validation\Rule::in(['InnoDB', 'MyISAM'])],
+            'charset' => ['nullable', \Illuminate\Validation\Rule::in(['utf8mb4', 'utf8', 'latin1', 'ascii'])],
+            'collation' => ['nullable', \Illuminate\Validation\Rule::in(['utf8mb4_unicode_ci', 'utf8mb4_general_ci', 'utf8mb4_bin', 'utf8_general_ci'])],
         ]);
         $name = $tables->safeTableName($data['name']);
         abort_if(\Illuminate\Support\Facades\Schema::hasTable($name), 422, 'La tabla ya existe.');
         \Illuminate\Support\Facades\Schema::create($name, function (\Illuminate\Database\Schema\Blueprint $t) use ($data) {
+            $t->engine = $data['engine'] ?? 'InnoDB';
+            $t->charset = $data['charset'] ?? 'utf8mb4';
+            $t->collation = $data['collation'] ?? 'utf8mb4_unicode_ci';
             if ($data['use_uuid_pk'] ?? false) {
                 $t->char('id', 36);
                 $t->primary('id');

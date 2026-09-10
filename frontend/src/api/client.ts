@@ -38,6 +38,9 @@ type DbTableInput = {
   add_timestamps?:boolean;
   add_soft_deletes?:boolean;
   use_uuid_pk?:boolean;
+  engine?:string;
+  charset?:string;
+  collation?:string;
 };
 
 export const api = {
