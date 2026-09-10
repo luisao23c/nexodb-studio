@@ -58,36 +58,55 @@ export function SchemaExplorer({ onChanged}:{onChanged?:()=>void}) {
     }catch(err){ setError((err as Error).message); }finally{ setLoading(false); }
   }
   useEffect(()=>{void load();},[]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(()=>{ if(selected) void api.schemaTable(selected).then(setDetail).catch(e=>setError((e as Error).message)); },[selected]);
+  useEffect(()=>{ if(selected){ setDetail(null); void api.schemaTable(selected).then(setDetail).catch(e=>setError((e as Error).message)); } },[selected]);
 
   const visible = useMemo(()=>tables.filter(t=>t.name.toLowerCase().includes(filter.toLowerCase())),[tables,filter]);
   const stats = useMemo(()=>{ const map=new Map<string,DbOverviewTable>(); overview.forEach(o=>map.set(o.name,o)); return map; },[overview]);
 
   async function refreshDetail(){ if(selected){ setDetail(await api.schemaTable(selected)); } await load(true); }
 
-  return <div className="explorer">
-    <aside className="panel explorer-list">
-      <div className="panel-head slim">
-        <div><span className="kicker"><Database size={13}/>{database||'Base de datos'}</span><h2>{tables.length} tablas</h2></div>
-        <div className="head-actions"><button className="icon-button" title="Nueva tabla" onClick={()=>setShowCreate(true)}><Plus size={16}/></button><button className="icon-button" title="Recargar" onClick={()=>void load(true)}><RefreshCw size={15}/></button></div>
+  function openTable(name:string, nextTab:typeof tab='browse'){
+    setSelected(name);
+    setTab(nextTab);
+  }
+
+  const selectedTable = tables.find(t=>t.name===selected);
+  const selectedStats = selected ? stats.get(selected) : undefined;
+  const tableTabs = new Set<typeof tab>(['browse','structure']);
+
+  return <div className="database-workbench">
+    <header className="db-commandbar">
+      <div className="db-identity"><span className="db-icon"><Database size={20}/></span><div><span>Base de datos activa</span><h1>{database||'Base de datos'}</h1></div><span className="db-online"><i/>MySQL conectado</span></div>
+      <div className="db-command-actions"><span className="db-count"><b>{tables.length}</b> tablas</span><button className="button ghost" onClick={()=>void load(true)}><RefreshCw size={15}/>Actualizar</button><button className="button primary" onClick={()=>setShowCreate(true)}><Plus size={16}/>Nueva tabla</button></div>
+    </header>
+
+    <div className="explorer">
+    <aside className="panel explorer-list" aria-label="Explorador de tablas">
+      <div className="object-explorer-head">
+        <div><span>Objetos de base de datos</span><h2>Tablas</h2></div>
+        <span className="object-count">{visible.length}</span>
       </div>
       <label className="search inside"><Search size={15}/><input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filtrar tablas…"/></label>
       <div className="explorer-tables">
-        {visible.map(t=>{ const o=stats.get(t.name); return <button key={t.name} className={selected===t.name?'active':''} onClick={()=>setSelected(t.name)}>
-          <Table2 size={15}/><span className="explorer-tname">{t.name}</span>
-          <span className="explorer-meta">{o?.rows??'·'} filas{o?` · ${o.size_kb} KB`:''}</span>
-          {t.managed?<span className="pill managed">{t.app_label}</span>:<span className="pill raw">raw</span>}
+        {visible.map(t=>{ const o=stats.get(t.name); return <button key={t.name} className={selected===t.name?'active':''} onClick={()=>openTable(t.name)}>
+          <span className="table-object-icon"><Table2 size={16}/></span><span className="table-object-copy"><strong>{t.app_label||t.name.replace(/^nx_/, '')}</strong><code>{t.name}</code><small>{o?.rows??'—'} filas · {o?.engine??'MySQL'} · {o?.size_kb??'—'} KB</small></span>
+          <ChevronRight className="table-object-arrow" size={16}/>
         </button>; })}
+        {!visible.length&&<div className="object-empty"><Search size={18}/><span>No hay tablas que coincidan.</span></div>}
       </div>
+      <div className="explorer-foot"><span><i/>Prefijo protegido</span><code>nx_</code></div>
     </aside>
 
     <section className="explorer-main">
-      <div className="explorer-tabs top">
-        {[['dashboard','Resumen',Database],['structure','Estructura',Braces],['browse','Datos',Table2],['sql','Consola SQL',Play],['audit','Auditoría',HistoryIcon],['relations','Relaciones (ER)',GitBranch]].map(([k,l,Icon])=>{ const I=Icon as typeof Braces; return <button key={k as string} className={tab===k?'active':''} onClick={()=>setTab(k as typeof tab)}><I size={15}/>{l as string}</button>; })}
+      <div className="db-context-card">
+        {selected?<><div className="selected-table-title"><span className="selected-table-icon"><Table2 size={20}/></span><div><span>Tabla seleccionada</span><h2>{selectedTable?.app_label||selected.replace(/^nx_/,'')}</h2><code>{selected}</code></div></div><div className="selected-table-stats"><span><b>{selectedStats?.rows??'—'}</b>registros</span><span><b>{detail?.columns.length??'—'}</b>columnas</span><span><b>{selectedStats?.size_kb??'—'} KB</b>tamaño</span></div></>:<div className="selected-table-title"><span className="selected-table-icon"><Database size={20}/></span><div><span>Vista general</span><h2>{database}</h2></div></div>}
       </div>
+      <nav className="explorer-tabs top" aria-label="Vistas de base de datos">
+        {[['dashboard','Inicio',Database],['browse','Datos',Table2],['structure','Estructura',Braces],['relations','Relaciones',GitBranch],['sql','SQL',Play],['audit','Actividad',HistoryIcon]].map(([k,l,Icon])=>{ const I=Icon as typeof Braces; const needsTable=tableTabs.has(k as typeof tab); return <button key={k as string} className={tab===k?'active':''} disabled={needsTable&&!selected} onClick={()=>setTab(k as typeof tab)}><I size={15}/>{l as string}</button>; })}
+      </nav>
       {loading&&!tables.length?<div className="center-state small"><LoaderCircle className="spin"/><p>Leyendo el esquema…</p></div>:
        error?<div className="error-box">{error}<button className="button ghost" onClick={()=>void load(true)}>Reintentar</button></div>:
-       tab==='dashboard'?<DbDashboard/>:
+       tab==='dashboard'?<DbDashboard onOpenTable={name=>openTable(name,'browse')}/>:
        tab==='audit'?<AuditTab/>:
        tab==='structure'&&(selected&&detail)?<StructureTab detail={detail} stats={stats.get(selected)} onRefresh={refreshDetail} onTableChanged={async next=>{await load(false);if(next)setSelected(next);}}/>:
        tab==='browse'&&selected?<BrowseTab table={selected} columns={detail?.columns??[]} onChanged={refreshDetail}/>:
@@ -95,6 +114,7 @@ export function SchemaExplorer({ onChanged}:{onChanged?:()=>void}) {
         tab==='relations'?<RelationsGraph relations={relations} tables={tables}/>:
        <div className="center-state small"><Database/><p>Selecciona una tabla.</p></div>}
     </section>
+    </div>
     {showCreate&&<CreateTableModal onClose={()=>setShowCreate(false)} onCreated={async t=>{setShowCreate(false);await load(true);setSelected(t);setTab('structure');}}/>}
   </div>;
 }
@@ -127,16 +147,13 @@ function StructureTab({detail,stats,onRefresh,onTableChanged}:{detail:SchemaTabl
     try{ await api.dropDbTable(detail.table); await onTableChanged(); }finally{ setBusy(false); } }
 
   return <div className="panel structure-panel">
-    <div className="panel-head slim">
-      <div><span className="kicker"><Braces size={13}/>Estructura</span><h2>{detail.table}</h2></div>
+    <div className="panel-head structure-toolbar">
+      <div><span className="kicker"><Braces size={13}/>Diseño de tabla</span><h2>Columnas e índices</h2><p>Define los campos, llaves y reglas de esta tabla.</p></div>
       <div className="structure-meta">
-        {detail.managed_by&&<span className="pill managed">{detail.managed_by}</span>}
-        {stats&&<span className="pill">{stats.engine} · {stats.rows??'—'} filas · {stats.size_kb} KB</span>}
-        <button className="icon-button" title="Agregar columna" onClick={()=>setColModal({mode:'add'})}><Plus size={15}/></button>
-        <button className="icon-button" title="Nuevo índice" onClick={()=>setIdxModal(true)}><Sigma size={15}/></button>
-        <button className="icon-button" title="Renombrar tabla" onClick={()=>void renameTable()}><Pencil size={14}/></button>
-        <button className="icon-button" title="Vaciar tabla" onClick={()=>void truncate()}><Eraser size={14}/></button>
-        <button className="icon-button danger" title="Eliminar tabla" onClick={()=>void dropTable()}><Trash2 size={14}/></button>
+        {stats&&<span className="engine-badge">{stats.engine}</span>}
+        <button className="button ghost compact-button" onClick={()=>setIdxModal(true)}><Sigma size={15}/>Nuevo índice</button>
+        <button className="button primary compact-button" onClick={()=>setColModal({mode:'add'})}><Plus size={15}/>Nueva columna</button>
+        <details className="action-menu"><summary>Más acciones</summary><div><button onClick={()=>void renameTable()}><Pencil size={14}/>Renombrar tabla</button><button onClick={()=>void truncate()}><Eraser size={14}/>Vaciar registros</button><button className="danger" onClick={()=>void dropTable()}><Trash2 size={14}/>Eliminar tabla</button></div></details>
       </div>
     </div>
     <div className="table-wrap"><table>
@@ -187,10 +204,8 @@ function BrowseTab({table,columns,onChanged}:{table:string;columns:SchemaColumn[
         <span>{page?.total??0} registros</span>
         <button className="button primary compact-button" onClick={()=>setEditing(null)}><Plus size={15}/>Nuevo registro</button>
         <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={e=>{const f=e.target.files?.[0]; if(f) void doImport(f); e.target.value='';}}/>
-        <button className="icon-button" title="Importar CSV" onClick={()=>fileRef.current?.click()}><Upload size={15}/></button>
-        <button className="icon-button" title="Exportar CSV" onClick={()=>void api.exportTable(table,'csv')}><Download size={15}/></button>
-        <button className="icon-button" title="Exportar JSON" onClick={()=>void api.exportTable(table,'json')}><Braces size={15}/></button>
-        <button className="icon-button" title="Exportar SQL (INSERTs)" onClick={()=>void api.exportTable(table,'sql')}><Database size={15}/></button>
+        <button className="button ghost compact-button" onClick={()=>fileRef.current?.click()}><Upload size={15}/>Importar CSV</button>
+        <details className="action-menu export-menu"><summary><Download size={14}/>Exportar</summary><div><button onClick={()=>void api.exportTable(table,'csv')}><Download size={14}/>Archivo CSV</button><button onClick={()=>void api.exportTable(table,'json')}><Braces size={14}/>Archivo JSON</button><button onClick={()=>void api.exportTable(table,'sql')}><Database size={14}/>Sentencias SQL</button></div></details>
       </div>
     </div>
     {importResult&&<div className={`callout ${importResult.errors.length?'admin-note':'ok-note'}`}>

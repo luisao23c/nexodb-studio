@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, Database, HardDrive, History, LoaderCircle, Search, Table2 } from 'lucide-react';
+import { Activity, ArrowRight, Database, HardDrive, History, LoaderCircle, Search, Table2 } from 'lucide-react';
 import { api } from '../api/client';
 import type { AuditEntry, DashboardData } from '../types';
 
@@ -8,9 +8,10 @@ const ACTION_LABELS: Record<string,string> = {
   'table.create':'Tabla creada','table.drop':'Tabla eliminada','table.rename':'Tabla renombrada','table.truncate':'Tabla vaciada',
   'column.modify':'Columna modificada','column.drop':'Columna eliminada','index.create':'Índice creado','index.drop':'Índice eliminado',
   'export':'Exportación','import':'Importación','record.delete':'Registro eliminado',
+  'row.create':'Registro creado','row.update':'Registro actualizado','row.delete':'Registro eliminado',
 };
 
-export function DbDashboard() {
+export function DbDashboard({onOpenTable}:{onOpenTable?:(table:string)=>void}) {
   const [data,setData] = useState<DashboardData|null>(null);
   const [loading,setLoading] = useState(true);
   useEffect(()=>{ void api.dashboard().then(setData).finally(()=>setLoading(false)); },[]);
@@ -35,12 +36,12 @@ export function DbDashboard() {
           {!data.recent.length&&<p className="empty-cell small">Sin acciones todavía.</p>}</div>
       </div>
     </div>
-    <div className="panel dash-panel">
-      <div className="panel-head slim"><div><span className="kicker"><HardDrive size={13}/>Almacenamiento</span><h2>{data.database}</h2></div></div>
+    <div className="panel dash-panel table-directory">
+      <div className="panel-head slim"><div><span className="kicker"><HardDrive size={13}/>Directorio</span><h2>Tablas de {data.database}</h2><p>Abre una tabla para consultar y administrar sus registros.</p></div></div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Tabla</th><th>Motor</th><th>Filas</th><th>Tamaño</th></tr></thead>
-        <tbody>{data.tables.map(t=><tr key={t.name}><td><b>{t.name}</b></td><td>{t.engine}</td><td>{t.rows??'—'}</td><td>{t.size_kb} KB</td></tr>)}
-        {!data.tables.length&&<tr><td colSpan={4} className="empty-cell">Sin tablas.</td></tr>}</tbody>
+        <thead><tr><th>Tabla</th><th>Motor</th><th>Filas</th><th>Tamaño</th><th/></tr></thead>
+        <tbody>{data.tables.map(t=><tr key={t.name} className={onOpenTable?'clickable-row':''} onClick={()=>onOpenTable?.(t.name)}><td><span className="table-name-cell"><Table2 size={15}/><b>{t.name}</b></span></td><td>{t.engine}</td><td>{t.rows??'—'}</td><td>{t.size_kb} KB</td><td><button className="row-open" onClick={e=>{e.stopPropagation();onOpenTable?.(t.name)}}>Abrir <ArrowRight size={14}/></button></td></tr>)}
+        {!data.tables.length&&<tr><td colSpan={5} className="empty-cell">Sin tablas.</td></tr>}</tbody>
       </table></div>
     </div>
   </div>;

@@ -45,7 +45,7 @@ export default function App(){
       </header>
       {loading&&!tables.length?<div className="center-state"><RefreshCw className="spin"/><p>Conectando con la base de datos…</p></div>:
        error?<div className="center-state error-state"><Database/><h2>No se pudo conectar con Laravel</h2><p>{error}</p><button className="button primary" onClick={()=>void load()}>Reintentar</button></div>:
-       <div className="content">
+       <div className={`content ${section==='explorer'?'database-content':''}`}>
         {section==='explorer'&&<SchemaExplorer onChanged={load}/>}
         {section==='menus'&&<MenuBuilder tables={tables}/>}
         {section==='roles'&&<RolesPermissions tables={tables}/>}

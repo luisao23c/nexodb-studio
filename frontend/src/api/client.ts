@@ -20,6 +20,26 @@ async function request<T>(path:string, init:RequestInit = {}):Promise<T> {
 
 const json = (data:unknown) => ({ body:JSON.stringify(data) });
 
+type DbColumnInput = {
+  name?:string;
+  data_type:string;
+  length?:number|null;
+  nullable?:boolean;
+  default_value?:string|null;
+  unique?:boolean;
+  unsigned?:boolean;
+  comment?:string|null;
+  enum_values?:string;
+};
+
+type DbTableInput = {
+  name:string;
+  columns?:Array<DbColumnInput & {name:string}>;
+  add_timestamps?:boolean;
+  add_soft_deletes?:boolean;
+  use_uuid_pk?:boolean;
+};
+
 export const api = {
   // Schema explorer
   schemaTables: () => request<{tables:SchemaTable[]}>('/builder/schema/tables'),
@@ -38,9 +58,9 @@ export const api = {
   updateRow: (table:string,id:number,data:Record<string,unknown>) => request<Record<string,unknown>>(`/builder/db/${table}/rows/${id}`,{method:'PUT',...json(data)}),
   deleteRow: (table:string,id:number) => request<void>(`/builder/db/${table}/rows/${id}`,{method:'DELETE'}),
   runSql: (sql:string) => request<SqlResult>('/builder/db/query',{method:'POST',...json({sql})}),
-  createDbTable: (data:{name:string;columns?:{name:string;data_type:string;length?:number|null;nullable?:boolean}[]}) => request<{ok:boolean;table:string}>('/builder/db/tables',{method:'POST',...json(data)}),
-  addDbColumn: (table:string,data:{name:string;data_type:string;length?:number|null;nullable?:boolean;default_value?:string|null;unique?:boolean}) => request<{ok:boolean}>(`/builder/db/${table}/columns`,{method:'POST',...json(data)}),
-  modifyDbColumn: (table:string,column:string,data:{data_type:string;length?:number|null;nullable?:boolean;default_value?:string|null;unique?:boolean}) => request<{ok:boolean}>(`/builder/db/${table}/columns/${column}`,{method:'PUT',...json(data)}),
+  createDbTable: (data:DbTableInput) => request<{ok:boolean;table:string}>('/builder/db/tables',{method:'POST',...json(data)}),
+  addDbColumn: (table:string,data:DbColumnInput & {name:string}) => request<{ok:boolean}>(`/builder/db/${table}/columns`,{method:'POST',...json(data)}),
+  modifyDbColumn: (table:string,column:string,data:DbColumnInput) => request<{ok:boolean}>(`/builder/db/${table}/columns/${column}`,{method:'PUT',...json(data)}),
   dropDbColumn: (table:string,column:string) => request<void>(`/builder/db/${table}/columns/${column}`,{method:'DELETE'}),
   addDbIndex: (table:string,data:{columns:string[];unique?:boolean;name?:string}) => request<{ok:boolean;name:string}>(`/builder/db/${table}/indexes`,{method:'POST',...json(data)}),
   dropDbIndex: (table:string,index:string) => request<void>(`/builder/db/${table}/indexes/${index}`,{method:'DELETE'}),
