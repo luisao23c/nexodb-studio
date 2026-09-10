@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BarChart3, Blocks, ChevronRight, Code2, Database, FolderTree, FormInput, Menu, RefreshCw, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { BarChart3, Blocks, ChevronRight, Code2, Database, FolderTree, FormInput, Layout, Menu, RefreshCw, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { api } from './api/client';
 import { ChartsStudio } from './components/ChartsStudio';
 import { CodeStudio } from './components/CodeStudio';
@@ -7,13 +7,15 @@ import { MenuBuilder } from './components/MenuBuilder';
 import { RolesPermissions } from './components/RolesPermissions';
 import { SchemaExplorer } from './components/SchemaExplorer';
 import { InterfaceStudio } from './components/InterfaceStudio';
+import ProjectBuilder from './components/ProjectBuilder';
 import type { SchemaTable } from './types';
 
-type Section = 'explorer'|'interfaces'|'menus'|'roles'|'charts'|'code';
+type Section = 'explorer'|'interfaces'|'menus'|'roles'|'charts'|'code'|'builder';
 
 const NAV: {key:Section;label:string;description:string;group:'Diseña'|'Construye'|'Controla';icon:typeof Database}[] = [
   {key:'explorer',label:'Modelo de datos',description:'Tablas, campos y relaciones',group:'Diseña',icon:Database},
   {key:'interfaces',label:'Interfaces',description:'Formularios y vistas de tabla',group:'Diseña',icon:FormInput},
+  {key:'builder',label:'Constructor',description:'Rutas, páginas y preview del proyecto',group:'Construye',icon:Layout},
   {key:'menus',label:'Navegación',description:'Menús y rutas de la app',group:'Construye',icon:FolderTree},
   {key:'charts',label:'Indicadores',description:'Gráficas con datos reales',group:'Construye',icon:BarChart3},
   {key:'code',label:'Páginas',description:'Vistas personalizadas',group:'Construye',icon:Code2},
@@ -22,6 +24,7 @@ const NAV: {key:Section;label:string;description:string;group:'Diseña'|'Constru
 
 const SECTION_COPY: Record<Exclude<Section,'explorer'>,{step:string;title:string;description:string}> = {
   interfaces:{step:'Diseña · Paso 2',title:'Construye la experiencia de captura',description:'Crea formularios y vistas profesionales reutilizables, identificados con una key única.'},
+  builder:{step:'Construye · Proyecto',title:'Constructor de Proyectos',description:'Crea rutas anidadas, configura contenido (tablas, formularios, gráficas) y previewea tu proyecto en tiempo real.'},
   menus:{step:'Construye · Paso 1',title:'Organiza la navegación',description:'Decide qué verá el usuario y a dónde lo llevará cada opción del menú.'},
   charts:{step:'Construye · Paso 2',title:'Convierte datos en indicadores',description:'Crea gráficas conectadas a tus tablas para explicar la información de un vistazo.'},
   code:{step:'Construye · Paso 3',title:'Diseña páginas especiales',description:'Añade vistas personalizadas cuando una tabla o una gráfica no sean suficientes.'},
@@ -61,6 +64,7 @@ export default function App(){
         {section!=='explorer'&&<div className="section-intro"><span className="kicker">{SECTION_COPY[section].step}</span><h1>{SECTION_COPY[section].title}</h1><p>{SECTION_COPY[section].description}</p></div>}
         {section==='explorer'&&<SchemaExplorer onChanged={load}/>}
         {section==='interfaces'&&<InterfaceStudio tables={tables}/>}
+        {section==='builder'&&<ProjectBuilder/>}
         {section==='menus'&&<MenuBuilder tables={tables}/>}
         {section==='roles'&&<RolesPermissions tables={tables}/>}
         {section==='charts'&&<ChartsStudio tables={tables}/>}

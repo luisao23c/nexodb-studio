@@ -22,6 +22,11 @@ export interface ChartData { chart:{id:number;name:string;chart_type:string;colo
 
 export interface CodePage { id:number; name:string; slug:string; description?:string|null; code:string; active:boolean; }
 
+export interface BuilderRoute { id:number; parent_id:number|null; name:string; slug:string; icon?:string|null; sort_order:number;
+  content_type:'table'|'form'|'chart'|'page'|'redirect'|'divider'|'empty'; content_config?:Record<string,unknown>|null;
+  layout:'default'|'sidebar'|'tabs'|'fullwidth'|'card'; active:boolean; visible_in_menu:boolean;
+  badge_color?:string|null; badge_label?:string|null; children?:BuilderRoute[]; }
+
 export type FormFieldType = 'text'|'textarea'|'number'|'email'|'password'|'date'|'datetime'|'autocomplete'|'select'|'multiselect'|'checkbox'|'radio'|'switch'|'file'|'hidden'|'heading'|'divider'|'button';
 export interface BuilderFormField { id?:number; field_key:string; label:string; field_type:FormFieldType; source_column?:string|null; placeholder?:string|null; help_text?:string|null; default_value?:string|null; width:number; required:boolean; options?:string[]|null; config?:Record<string,unknown>|null; sort_order?:number; }
 export interface BuilderForm { id?:number; name:string; form_key:string; table_name:string; description?:string|null; layout_columns:number; submit_label:string; settings?:Record<string,unknown>|null; active:boolean; fields:BuilderFormField[]; }

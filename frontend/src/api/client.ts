@@ -1,4 +1,4 @@
-import type { AuditEntry, BrowsePage, BuilderForm, BuilderView, Chart, ChartData, CodePage, DashboardData, DbForeignKey, DbOverviewTable, Menu, MenuItem, RelationOption, Role, SchemaRelationModule, SchemaTable, SchemaTableDetail, SqlResult } from '../types';
+import type { AuditEntry, BrowsePage, BuilderForm, BuilderRoute, BuilderView, Chart, ChartData, CodePage, DashboardData, DbForeignKey, DbOverviewTable, Menu, MenuItem, RelationOption, Role, SchemaRelationModule, SchemaTable, SchemaTableDetail, SqlResult } from '../types';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 const KEY = import.meta.env.VITE_BUILDER_KEY || '';
@@ -119,4 +119,13 @@ export const api = {
   createView: (data:BuilderView) => request<BuilderView>('/builder/views',{method:'POST',...json(data)}),
   updateView: (id:number,data:BuilderView) => request<BuilderView>(`/builder/views/${id}`,{method:'PUT',...json(data)}),
   deleteView: (id:number) => request<void>(`/builder/views/${id}`,{method:'DELETE'}),
+
+  // Routes (Project Builder)
+  routes: () => request<{routes:BuilderRoute[]}>('/builder/routes'),
+  routesFlat: () => request<{routes:BuilderRoute[]}>('/builder/routes-flat'),
+  createRoute: (data:{name:string;parent_id?:number|null;content_type:string;content_config?:Record<string,unknown>;icon?:string;layout?:string}) => request<{ok:boolean;route:BuilderRoute}>('/builder/routes',{method:'POST',...json(data)}),
+  updateRoute: (id:number,data:Partial<BuilderRoute>) => request<{ok:boolean;route:BuilderRoute}>(`/builder/routes/${id}`,{method:'PUT',...json(data)}),
+  deleteRoute: (id:number) => request<{ok:boolean}>(`/builder/routes/${id}`,{method:'DELETE'}),
+  reorderRoutes: (order:{id:number;parent_id:number|null;sort_order:number}[]) => request<{ok:boolean}>('/builder/routes-reorder',{method:'POST',...json({order})}),
+  routesPreview: () => request<{routes:BuilderRoute[];paths:Record<number,string>;tables:{name:string}[]}>('/builder/routes-preview'),
 };

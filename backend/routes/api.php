@@ -56,6 +56,15 @@ Route::middleware(['builder.admin', 'throttle:api'])->prefix('builder')->group(f
     Route::delete('/menus/{menu}/items/{item}', [MenuController::class, 'destroyItem']);
     Route::post('/menus/{menu}/reorder', [MenuController::class, 'reorderItems']);
 
+    // Routes (Project Builder)
+    Route::get('/routes', [\App\Http\Controllers\Api\RouteController::class, 'index']);
+    Route::get('/routes-flat', [\App\Http\Controllers\Api\RouteController::class, 'flat']);
+    Route::post('/routes', [\App\Http\Controllers\Api\RouteController::class, 'store']);
+    Route::put('/routes/{id}', [\App\Http\Controllers\Api\RouteController::class, 'update']);
+    Route::delete('/routes/{id}', [\App\Http\Controllers\Api\RouteController::class, 'destroy']);
+    Route::post('/routes-reorder', [\App\Http\Controllers\Api\RouteController::class, 'reorder']);
+    Route::get('/routes-preview', [\App\Http\Controllers\Api\RouteController::class, 'preview']);
+
     // Roles & permissions
     Route::get('/roles', [RoleController::class, 'index']);
     Route::post('/roles', [RoleController::class, 'store']);
