@@ -1,14 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Braces, ChevronLeft, ChevronRight, Code2, Database, Download, Eraser, GitBranch, Key, LoaderCircle, Pencil, Play, Plus, RefreshCw, Search, Sigma, Table2, Trash2, Upload, X, History as HistoryIcon } from 'lucide-react';
+import { AlertTriangle, Braces, Calendar, Check, CheckCircle, ChevronLeft, ChevronRight, Clock, Code2, Database, Download, Eraser, GitBranch, Hash, Key, Link, LoaderCircle, Mail, Pencil, Phone, Play, Plus, RefreshCw, Search, Sigma, Table2, Text, Trash2, Unlink, Upload, User, X, History as HistoryIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { AuditTab, DbDashboard } from './DbDashboard';
 import type { DbOverviewTable, RelationOption, SchemaColumn, SchemaRelationModule, SchemaTable, SchemaTableDetail } from '../types';
 
 const DDL_TYPES = [
-  { v:'string', l:'VARCHAR (texto corto)' }, { v:'text', l:'TEXT (texto largo)' },
-  { v:'integer', l:'BIGINT (entero)' }, { v:'decimal', l:'DECIMAL (15,2)' },
-  { v:'boolean', l:'TINYINT (verdadero/falso)' }, { v:'date', l:'DATE (fecha)' },
-  { v:'datetime', l:'DATETIME (fecha y hora)' }, { v:'relation', l:'BIGINT (llave foránea)' },
+  { v:'string', l:'VARCHAR', g:'Texto', icon:Text, color:'#0ea5e9', desc:'Texto corto (255)', sample:'"Hola"', phy:'varchar(:length)' },
+  { v:'text', l:'TEXT', g:'Texto', icon:Text, color:'#0ea5e9', desc:'Texto largo', sample:'Descripción…', phy:'text' },
+  { v:'mediumtext', l:'MEDIUMTEXT', g:'Texto', icon:Text, color:'#38bdf8', desc:'Texto medio (16MB)', sample:'Artículo…', phy:'mediumtext' },
+  { v:'longtext', l:'LONGTEXT', g:'Texto', icon:Text, color:'#7dd3fc', desc:'Texto enorme (4GB)', sample:'Log completo…', phy:'longtext' },
+  { v:'integer', l:'BIGINT', g:'Número', icon:Hash, color:'#6366f1', desc:'Entero grande', sample:'12345', phy:'bigint unsigned' },
+  { v:'int', l:'INT', g:'Número', icon:Hash, color:'#818cf8', desc:'Entero estándar', sample:'999', phy:'int' },
+  { v:'smallint', l:'SMALLINT', g:'Número', icon:Hash, color:'#a5b4fc', desc:'Entero pequeño', sample:'50', phy:'smallint' },
+  { v:'decimal', l:'DECIMAL', g:'Número', icon:Hash, color:'#f59e0b', desc:'Decimal (15,2)', sample:'99.99', phy:'decimal(15,2)' },
+  { v:'float', l:'FLOAT', g:'Número', icon:Hash, color:'#fbbf24', desc:'Decimal flotante', sample:'3.14', phy:'float' },
+  { v:'double', l:'DOUBLE', g:'Número', icon:Hash, color:'#fcd34d', desc:'Decimal doble precisión', sample:'1.23456789', phy:'double' },
+  { v:'boolean', l:'TINYINT(1)', g:'Booleano', icon:CheckCircle, color:'#10b981', desc:'Verdadero / Falso', sample:'1 / 0', phy:'tinyint(1)' },
+  { v:'date', l:'DATE', g:'Fecha', icon:Calendar, color:'#ec4899', desc:'Fecha sin hora', sample:'2026-09-09', phy:'date' },
+  { v:'datetime', l:'DATETIME', g:'Fecha', icon:Clock, color:'#f472b6', desc:'Fecha y hora', sample:'2026-09-09 14:30', phy:'datetime' },
+  { v:'timestamp', l:'TIMESTAMP', g:'Fecha', icon:Clock, color:'#fb7185', desc:'Timestamp Unix', sample:'auto now', phy:'timestamp' },
+  { v:'time', l:'TIME', g:'Fecha', icon:Clock, color:'#fda4af', desc:'Solo hora', sample:'14:30:00', phy:'time' },
+  { v:'year', l:'YEAR', g:'Fecha', icon:Calendar, color:'#e879f9', desc:'Solo año', sample:'2026', phy:'year' },
+  { v:'email', l:'VARCHAR', g:'Especial', icon:Mail, color:'#8b5cf6', desc:'Email (validación)', sample:'user@x.com', phy:'varchar(255)' },
+  { v:'phone', l:'VARCHAR', g:'Especial', icon:Phone, color:'#14b8a6', desc:'Teléfono', sample:'+52 123', phy:'varchar(30)' },
+  { v:'url', l:'VARCHAR', g:'Especial', icon:Link, color:'#3b82f6', desc:'URL / Enlace', sample:'https://…', phy:'varchar(500)' },
+  { v:'json', l:'JSON', g:'Especial', icon:Braces, color:'#f97316', desc:'JSON estructurado', sample:'{"k":"v"}', phy:'json' },
+  { v:'uuid', l:'CHAR(36)', g:'Especial', icon:Key, color:'#6366f1', desc:'UUID v4', sample:'550e8400…', phy:'char(36)' },
+  { v:'binary', l:'BLOB', g:'Especial', icon:Database, color:'#64748b', desc:'Datos binarios', sample:' archivo…', phy:'blob' },
+  { v:'enum', l:'ENUM', g:'Especial', icon:AlertTriangle, color:'#eab308', desc:'Valor fijo de lista', sample:'a, b, c', phy:"enum('a','b','c')" },
+  { v:'relation', l:'FK →', g:'Relación', icon:Link, color:'#4f46e5', desc:'Llave foránea', sample:'→ tabla.id', phy:'bigint unsigned' },
 ];
 
 /** phpMyAdmin-class explorer: overview, structure, browse, SQL console, ER diagram. */
@@ -84,9 +104,18 @@ function StructureTab({detail,stats,onRefresh,onTableChanged}:{detail:SchemaTabl
   const [colModal,setColModal] = useState<{mode:'add'|'edit';column?:SchemaColumn}|null>(null);
   const [idxModal,setIdxModal] = useState(false);
   const [busy,setBusy] = useState(false);
+  const [allTables,setAllTables] = useState<string[]>([]);
+
+  useEffect(()=>{ api.schemaTables().then(r=>setAllTables(r.tables.map(t=>t.name))).catch(()=>{}); },[]);
 
   async function dropColumn(name:string){ if(!confirm(`¿Eliminar la columna "${name}"? Los datos se perderán.`))return; setBusy(true);
     try{ await api.dropDbColumn(detail.table,name); await onRefresh(); }finally{ setBusy(false); } }
+  async function dropForeignKey(column:string){ if(!confirm(`¿Eliminar la FK de la columna "${column}"?`))return; setBusy(true);
+    try{ await api.dropForeignKey(detail.table,column); await onRefresh(); }finally{ setBusy(false); } }
+  async function linkForeignKey(column:string){ 
+    const fkTable=prompt(`Tabla referenciada para ${column}:`,allTables.find(t=>t!==detail.table));
+    if(!fkTable?.trim())return; setBusy(true);
+    try{ await api.addForeignKey(detail.table,{column,referenced_table:fkTable.trim()}); await onRefresh(); }finally{ setBusy(false); } }
   async function dropIndex(name:string){ if(!confirm(`¿Eliminar el índice "${name}"?`))return; setBusy(true);
     try{ await api.dropDbIndex(detail.table,name); await onRefresh(); }finally{ setBusy(false); } }
   async function renameTable(){ const n=prompt('Nuevo nombre de la tabla:',detail.table.replace(/^nx_/,'')); if(!n?.trim())return; setBusy(true);
@@ -114,12 +143,14 @@ function StructureTab({detail,stats,onRefresh,onTableChanged}:{detail:SchemaTabl
       <thead><tr><th>#</th><th>Columna</th><th>Tipo</th><th>Nulo</th><th>Llave</th><th>Default</th><th>Acciones</th></tr></thead>
       <tbody>
         <tr className="locked-row"><td>—</td><td><b>id</b></td><td><code>bigint unsigned</code></td><td>NO</td><td><span className="pill managed"><Key size={11}/>PK</span></td><td>—</td><td className="muted">sistema</td></tr>
-        {detail.columns.filter(c=>c.name!=='id'&&c.name!=='created_at'&&c.name!=='updated_at').map((c,i)=><tr key={c.name}>
+        {detail.columns.filter(c=>c.name!=='id'&&c.name!=='created_at'&&c.name!=='updated_at').map((c,i)=>{
+          const fk = detail.foreign_keys?.find(f=>f.column_name===c.name);
+          return <tr key={c.name}>
           <td>{i+1}</td><td><b>{c.name}</b></td><td><code>{c.type}</code></td><td>{c.nullable?'SÍ':'NO'}</td>
-          <td>{c.key==='UNI'?<span className="pill managed">Única</span>:c.key==='MUL'?<span className="pill raw">IDX</span>:'—'}</td>
+          <td>{fk?<span className="pill fk-badge"><Link size={11}/>FK → {fk.referenced_table_name}.{fk.referenced_column_name}</span>:c.key==='UNI'?<span className="pill managed">Única</span>:c.key==='MUL'?<span className="pill raw">IDX</span>:'—'}</td>
           <td>{c.default??'—'}</td>
-          <td><div className="row-actions"><button title="Modificar" onClick={()=>setColModal({mode:'edit',column:c})}><Pencil size={14}/></button><button className="danger" title="Eliminar" disabled={busy} onClick={()=>void dropColumn(c.name)}><Trash2 size={14}/></button></div></td>
-        </tr>)}
+          <td><div className="row-actions"><button title="Modificar" onClick={()=>setColModal({mode:'edit',column:c})}><Pencil size={14}/></button>{fk&&<button className="danger" title="Eliminar FK" disabled={busy} onClick={()=>void dropForeignKey(c.name)}><Unlink size={14}/></button>}<button className="danger" title="Eliminar" disabled={busy} onClick={()=>void dropColumn(c.name)}><Trash2 size={14}/></button></div></td>
+        </tr>;})}
       </tbody>
     </table></div>
     <div className="index-box"><span className="kicker">Índices</span>
@@ -129,7 +160,7 @@ function StructureTab({detail,stats,onRefresh,onTableChanged}:{detail:SchemaTabl
         {ix.name!=='PRIMARY'&&<button className="row-delete" onClick={()=>void dropIndex(ix.name)}><Trash2 size={13}/></button>}
       </div>)}
     </div>
-    {colModal&&<ColumnModal table={detail.table} mode={colModal.mode} column={colModal.column} onClose={()=>setColModal(null)} onDone={async()=>{setColModal(null);await onRefresh();}}/>}
+    {colModal&&<ColumnModal table={detail.table} mode={colModal.mode} column={colModal.column} allTables={allTables} onClose={()=>setColModal(null)} onDone={async()=>{setColModal(null);await onRefresh();}}/>}
     {idxModal&&<IndexModal table={detail.table} columns={detail.columns} onClose={()=>setIdxModal(false)} onDone={async()=>{setIdxModal(false);await onRefresh();}}/>}
   </div>;
 }
@@ -292,27 +323,80 @@ function SqlTab(){
 }
 
 /* ================= Modals ================= */
-function ColumnModal({table,mode,column,onClose,onDone}:{table:string;mode:'add'|'edit';column?:SchemaColumn;onClose:()=>void;onDone:()=>Promise<void>}){
+function ColumnModal({table,mode,column,onClose,onDone,allTables}:{table:string;mode:'add'|'edit';column?:SchemaColumn;onClose:()=>void;onDone:()=>Promise<void>;allTables?:string[]}){
   const typeOf = (t:string)=>DDL_TYPES.find(d=>t.startsWith(d.v))?.v??'string';
   const [form,setForm] = useState({ name:column?.name??'', data_type:column?typeOf(column.type):'string', length:column&&column.type.includes('varchar')?parseInt(column.type.replace(/\D/g,''))||255:255,
-    nullable:column?.nullable??true, default_value:column?.default??'', unique:false });
+    nullable:column?.nullable??true, default_value:column?.default??'', unique:false, unsigned:false, comment:'',
+    fk_table:'', fk_column:'id', fk_on_delete:'SET NULL', enum_values:'' });
   const [busy,setBusy] = useState(false); const [error,setError] = useState('');
+  const [tables,setTables] = useState<string[]>(allTables??[]);
+  const [refColumns,setRefColumns] = useState<string[]>([]);
+
+  useEffect(()=>{ if(!allTables) api.schemaTables().then(r=>setTables(r.tables.map(t=>t.name))).catch(()=>{}); },[]);
+
+  useEffect(()=>{
+    if(form.data_type==='relation'&&form.fk_table){
+      api.schemaTable(form.fk_table).then(r=>setRefColumns(r.columns.map(c=>c.name))).catch(()=>setRefColumns([]));
+    }
+  },[form.fk_table,form.data_type]);
+
   async function submit(e:React.FormEvent){ e.preventDefault(); setBusy(true); setError('');
     try{
-      if(mode==='add') await api.addDbColumn(table,{...form});
-      else await api.modifyDbColumn(table,column!.name,{data_type:form.data_type,length:form.data_type==='string'?form.length:null,nullable:form.nullable,default_value:form.default_value||null,unique:form.unique});
+      if(mode==='add'){
+        await api.addDbColumn(table,{...form});
+        if(form.data_type==='relation'&&form.fk_table){
+          await api.addForeignKey(table,{column:form.name,referenced_table:form.fk_table,referenced_column:form.fk_column,on_delete:form.fk_on_delete});
+        }
+      } else {
+        await api.modifyDbColumn(table,column!.name,{data_type:form.data_type,length:['string','email','phone','url'].includes(form.data_type)?form.length:null,nullable:form.nullable,default_value:form.default_value||null,unique:form.unique,unsigned:form.unsigned,comment:form.comment||null});
+      }
       await onDone();
     }catch(err){ setError((err as Error).message); }finally{ setBusy(false); } }
+
+  const groups = DDL_TYPES.reduce<Record<string,typeof DDL_TYPES>>((acc,t)=>{(acc[t.g]=acc[t.g]||[]).push(t);return acc;},{});
+
   return <ModalShell title={mode==='add'?`Nueva columna en ${table}`:`Modificar ${column?.name}`} onClose={onClose}>
     <form className="modal-body" onSubmit={submit}>
-      {mode==='add'&&<label className="control"><span>Nombre</span><input autoFocus value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="telefono" required/></label>}
+      {mode==='add'&&<label className="control"><span>Nombre</span><input autoFocus value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="cliente_id" required/></label>}
       <div className="form-grid three">
-        <label className="control"><span>Tipo</span><select value={form.data_type} onChange={e=>setForm({...form,data_type:e.target.value})}>{DDL_TYPES.map(t=><option key={t.v} value={t.v}>{t.l}</option>)}</select></label>
-        {form.data_type==='string'&&<label className="control"><span>Longitud</span><input type="number" min={1} max={1000} value={form.length} onChange={e=>setForm({...form,length:Number(e.target.value)})}/></label>}
+        <label className="control"><span>Tipo</span><select value={form.data_type} onChange={e=>setForm({...form,data_type:e.target.value})}>
+          {Object.entries(groups).map(([g,items])=><optgroup key={g} label={g}>{items.map(t=><option key={t.v} value={t.v}>{t.l} — {t.desc}</option>)}</optgroup>)}
+        </select></label>
+        {['string','email','phone','url'].includes(form.data_type)&&<label className="control"><span>Longitud</span><input type="number" min={1} max={65535} value={form.length} onChange={e=>setForm({...form,length:Number(e.target.value)})}/></label>}
         <label className="control"><span>Default</span><input value={form.default_value} onChange={e=>setForm({...form,default_value:e.target.value})} placeholder="—"/></label>
       </div>
-      <div className="toggle-row"><label className="check"><input type="checkbox" checked={form.nullable} onChange={e=>setForm({...form,nullable:e.target.checked})}/><span>Acepta nulos</span></label>
-        {mode==='edit'&&<label className="check"><input type="checkbox" checked={form.unique} onChange={e=>setForm({...form,unique:e.target.checked})}/><span>Valor único</span></label>}</div>
+      {form.data_type==='enum'&&<label className="control"><span>Valores (separados por coma)</span><input value={form.enum_values} onChange={e=>setForm({...form,enum_values:e.target.value})} placeholder="activo,inactivo,pendiente" required/></label>}
+      {form.data_type==='relation'&&<div className="fk-config">
+        <div className="fk-header"><Link size={14}/><strong>Configurar Foreign Key</strong></div>
+        <div className="form-grid three">
+          <label className="control"><span>Tabla referenciada</span>
+            <select value={form.fk_table} onChange={e=>setForm({...form,fk_table:e.target.value,fk_column:'id'})} required>
+              <option value="">Seleccionar tabla…</option>
+              {tables.filter(t=>t!==table).map(t=><option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+          <label className="control"><span>Columna referenciada</span>
+            <select value={form.fk_column} onChange={e=>setForm({...form,fk_column:e.target.value})} required>
+              {refColumns.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <label className="control"><span>Al eliminar</span>
+            <select value={form.fk_on_delete} onChange={e=>setForm({...form,fk_on_delete:e.target.value})}>
+              <option value="SET NULL">SET NULL</option>
+              <option value="CASCADE">CASCADE</option>
+              <option value="RESTRICT">RESTRICT</option>
+              <option value="NO ACTION">NO ACTION</option>
+            </select>
+          </label>
+        </div>
+        {form.fk_table&&<div className="fk-preview"><small>VARCHAR → </small><code>{table}.{form.name}</code><small> → </small><code>{form.fk_table}.{form.fk_column}</code><small> ({form.fk_on_delete})</small></div>}
+      </div>}
+      <div className="toggle-row">
+        <label className="check"><input type="checkbox" checked={form.nullable} onChange={e=>setForm({...form,nullable:e.target.checked})}/><span>Acepta nulos</span></label>
+        {mode==='edit'&&<label className="check"><input type="checkbox" checked={form.unique} onChange={e=>setForm({...form,unique:e.target.checked})}/><span>Valor único</span></label>}
+        {['integer','int','smallint'].includes(form.data_type)&&<label className="check"><input type="checkbox" checked={form.unsigned} onChange={e=>setForm({...form,unsigned:e.target.checked})}/><span>Unsigned</span></label>}
+      </div>
+      {mode==='edit'&&<label className="control"><span>Comentario</span><input value={form.comment} onChange={e=>setForm({...form,comment:e.target.value})} placeholder="Descripción de la columna"/></label>}
       {error&&<p className="error-box">{error}</p>}
       <div className="modal-actions"><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary" disabled={busy}>{busy?<LoaderCircle className="spin" size={15}/>:null}{mode==='add'?'Agregar columna':'Aplicar cambios'}</button></div>
     </form>
@@ -334,27 +418,223 @@ function IndexModal({table,columns,onClose,onDone}:{table:string;columns:SchemaC
   </ModalShell>;
 }
 
+type ColDef = {name:string;data_type:string;length:number;nullable:boolean;unique:boolean;default_value:string;comment:string;fk_table:string;fk_column:string;fk_on_delete:string;unsigned:boolean;enum_values:string};
+const makeEmptyCol = ():ColDef => ({name:'',data_type:'string',length:255,nullable:true,unique:false,default_value:'',comment:'',fk_table:'',fk_column:'id',fk_on_delete:'SET NULL',unsigned:false,enum_values:''});
+
+/* ================= CreateTableModal — Super Professional ================= */
 function CreateTableModal({onClose,onCreated}:{onClose:()=>void;onCreated:(table:string)=>Promise<void>}){
-  const [name,setName] = useState(''); const [cols,setCols] = useState<{name:string;data_type:string;length:number;nullable:boolean}[]>([{name:'',data_type:'string',length:255,nullable:true}]);
+  const [name,setName] = useState('');
+  const [cols,setCols] = useState<ColDef[]>([makeEmptyCol()]);
+  const [opts,setOpts] = useState({timestamps:true,softDeletes:false,uuidPk:false,engine:'InnoDB',charset:'utf8mb4',collation:'utf8mb4_unicode_ci'});
   const [busy,setBusy] = useState(false); const [error,setError] = useState('');
+  const [tables,setTables] = useState<string[]>([]);
+  const [refColsMap,setRefColsMap] = useState<Record<string,string[]>>({});
+  const [expandedRow,setExpandedRow] = useState<number|null>(null);
+  const [showPreview,setShowPreview] = useState(false);
+  const [activeTab,setActiveTab] = useState<'columns'|'options'>('columns');
+
+  useEffect(()=>{ api.schemaTables().then(r=>setTables(r.tables.map(t=>t.name))).catch(()=>{}); },[]);
+
+  useEffect(()=>{
+    cols.forEach(c=>{
+      if(c.data_type==='relation'&&c.fk_table&&!refColsMap[c.fk_table]){
+        api.schemaTable(c.fk_table).then(r=>setRefColsMap(prev=>({...prev,[c.fk_table]:r.columns.map(col=>col.name)}))).catch(()=>{});
+      }
+    });
+  },[cols]);
+
+  function updateCol(i:number,patch:Partial<ColDef>){ setCols(v=>v.map((x,j)=>j===i?{...x,...patch}:x)); }
+  function moveCol(i:number,dir:-1|1){ const j=i+dir; if(j<0||j>=cols.length)return; setCols(v=>{const a=[...v];[a[i],a[j]]=[a[j],a[i]];return a;}); }
+
+  const quickFields = [
+    {label:'Email',type:'email',icon:Mail,preset:{data_type:'email',length:255,nullable:false,unique:true}},
+    {label:'Teléfono',type:'phone',icon:Phone,preset:{data_type:'phone',length:30,nullable:true}},
+    {label:'URL',type:'url',icon:Link,preset:{data_type:'url',length:500,nullable:true}},
+    {label:'Password',type:'string',icon:Key,preset:{data_type:'string',length:255,nullable:false,comment:'Hash de contraseña'}},
+    {label:'Slug',type:'string',icon:Code2,preset:{data_type:'string',length:255,nullable:false,unique:true}},
+    {label:'Estado',type:'enum',icon:AlertTriangle,preset:{data_type:'enum',nullable:false,default_value:'activo',enum_values:'activo,inactivo,pendiente'}},
+    {label:'Precio',type:'decimal',icon:Hash,preset:{data_type:'decimal',length:255,nullable:false,default_value:'0.00'}},
+    {label:'Cantidad',type:'integer',icon:Hash,preset:{data_type:'integer',nullable:false,default_value:'0'}},
+    {label:'Activo',type:'boolean',icon:CheckCircle,preset:{data_type:'boolean',nullable:false,default_value:'1'}},
+    {label:'Fecha',type:'date',icon:Calendar,preset:{data_type:'date',nullable:true}},
+    {label:'UUID',type:'uuid',icon:Key,preset:{data_type:'uuid',length:36,nullable:false,unique:true}},
+    {label:'JSON',type:'json',icon:Braces,preset:{data_type:'json',nullable:true}},
+    {label:'FK →',type:'relation',icon:Link,preset:{data_type:'relation',nullable:true}},
+  ];
+
+  function addQuickField(qf:typeof quickFields[0]){
+    const defaults:ColDef = {...makeEmptyCol(),name:qf.type==='email'?'email':qf.type==='phone'?'telefono':qf.type==='url'?'url':qf.type==='enum'?'estado':qf.label.toLowerCase(),...qf.preset};
+    setCols(v=>[...v,defaults]);
+  }
+
+  function generatePreview():string{
+    const tbl = name.trim()||'mi_tabla';
+    let sql = `CREATE TABLE nx_${tbl} (\n  id bigint unsigned NOT NULL AUTO_INCREMENT`;
+    if(opts.uuidPk) sql = `CREATE TABLE nx_${tbl} (\n  id char(36) NOT NULL`;
+    cols.filter(c=>c.name.trim()).forEach(c=>{
+      const typeDef = DDL_TYPES.find(t=>t.v===c.data_type);
+      const physical = typeDef?.phy||'varchar(255)';
+      const len = physical.includes(':length')?physical.replace(':length',String(c.length)):physical;
+      const nullStr = c.nullable?'NULL':'NOT NULL';
+      const defStr = c.default_value?` DEFAULT '${c.default_value}'`:'';
+      const uniqueStr = c.unique?' UNIQUE':'';
+      const unsignedStr = c.unsigned?' unsigned':'';
+      sql += `,\n  ${c.name} ${len}${unsignedStr} ${nullStr}${defStr}${uniqueStr}`;
+    });
+    if(opts.timestamps) sql += `,\n  created_at timestamp NULL DEFAULT NULL,\n  updated_at timestamp NULL DEFAULT NULL`;
+    if(opts.softDeletes) sql += `,\n  deleted_at timestamp NULL DEFAULT NULL`;
+      sql += `,\n  PRIMARY KEY (id)\n) ENGINE=${opts.engine} DEFAULT CHARSET=${opts.charset} COLLATE=${opts.collation};`;
+    cols.filter(c=>c.data_type==='relation'&&c.fk_table).forEach(c=>{
+      sql += `\n\nALTER TABLE nx_${tbl} ADD CONSTRAINT fk_${tbl}_${c.name} FOREIGN KEY (${c.name}) REFERENCES ${c.fk_table}(${c.fk_column}) ON DELETE ${c.fk_on_delete};`;
+    });
+    return sql;
+  }
+
   async function submit(e:React.FormEvent){ e.preventDefault(); setBusy(true); setError('');
-    try{ const r = await api.createDbTable({name,columns:cols.filter(c=>c.name.trim()).map(c=>({...c}))}); await onCreated(r.table); }
-    catch(err){ setError((err as Error).message); }finally{ setBusy(false); } }
+    try{
+      const valid = cols.filter(c=>c.name.trim());
+      const normalCols = valid.filter(c=>c.data_type!=='relation').map(c=>({name:c.name,data_type:c.data_type,length:['string','email','phone','url'].includes(c.data_type)?c.length:undefined,nullable:c.nullable,unique:c.unique,default_value:c.default_value||undefined,unsigned:c.unsigned,enum_values:c.enum_values||undefined}));
+      const r = await api.createDbTable({name,columns:normalCols,add_timestamps:opts.timestamps,add_soft_deletes:opts.softDeletes,use_uuid_pk:opts.uuidPk});
+      for(const c of valid.filter(c=>c.data_type==='relation'&&c.fk_table)){
+        await api.addDbColumn(r.table,{name:c.name,data_type:'integer',nullable:c.nullable,unsigned:true});
+        await api.addForeignKey(r.table,{column:c.name,referenced_table:c.fk_table,referenced_column:c.fk_column,on_delete:c.fk_on_delete});
+      }
+      await onCreated(r.table);
+    }catch(err){ setError((err as Error).message); }finally{ setBusy(false); } }
+
+  const groups = DDL_TYPES.reduce<Record<string,typeof DDL_TYPES>>((acc,t)=>{(acc[t.g]=acc[t.g]||[]).push(t);return acc;},{});
+  const colCount = cols.filter(c=>c.name.trim()).length;
+  const fkCount = cols.filter(c=>c.data_type==='relation'&&c.fk_table).length;
+
   return <ModalShell title="Nueva tabla de base de datos" onClose={onClose} wide>
     <form className="modal-body" onSubmit={submit}>
-      <div className="callout"><Database size={20}/><div><strong>Se creará una tabla real</strong><p>Con <code>id</code> auto-incremental y timestamps. Prefijo <code>nx_</code> automático.</p></div></div>
-      <label className="control"><span>Nombre</span><input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="Proyectos" required/></label>
-      <div className="control"><span>Columnas iniciales</span>
-        <div className="col-defs">{cols.map((c,i)=><div key={i} className="col-def">
-          <input value={c.name} onChange={e=>setCols(v=>v.map((x,j)=>j===i?{...x,name:e.target.value}:x))} placeholder="nombre_columna"/>
-          <select value={c.data_type} onChange={e=>setCols(v=>v.map((x,j)=>j===i?{...x,data_type:e.target.value}:x))}>{DDL_TYPES.filter(t=>t.v!=='relation').map(t=><option key={t.v} value={t.v}>{t.l}</option>)}</select>
-          {c.data_type==='string'&&<input type="number" value={c.length} min={1} max={1000} onChange={e=>setCols(v=>v.map((x,j)=>j===i?{...x,length:Number(e.target.value)}:x))} title="Longitud"/>}
-          <label className="check"><input type="checkbox" checked={c.nullable} onChange={e=>setCols(v=>v.map((x,j)=>j===i?{...x,nullable:e.target.checked}:x))}/><span>null</span></label>
-          <button type="button" className="row-delete" onClick={()=>setCols(v=>v.filter((_,j)=>j!==i))} disabled={cols.length===1}><X size={14}/></button>
-        </div>)}
-        <button type="button" className="button ghost" onClick={()=>setCols(v=>[...v,{name:'',data_type:'string',length:255,nullable:true}])}><Plus size={15}/>Agregar columna</button></div></div>
+      <div className="callout"><Database size={20}/><div><strong>Se creará una tabla real en MySQL</strong><p>Prefijo <code>nx_</code> · Motor {opts.engine} · Charset {opts.charset} · Collation {opts.collation}</p></div></div>
+
+      {/* Table name + options tabs */}
+      <div className="ct-header">
+        <label className="control" style={{flex:1}}>
+          <span>Nombre de la tabla</span>
+          <input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="ej: productos, ordenes, clientes" required className="table-name-input"/>
+        </label>
+        <div className="ct-tabs">
+          <button type="button" className={`ct-tab ${activeTab==='columns'?'active':''}`} onClick={()=>setActiveTab('columns')}><Table2 size={14}/>Columnas <span className="ct-tab-badge">{colCount}</span></button>
+          <button type="button" className={`ct-tab ${activeTab==='options'?'active':''}`} onClick={()=>setActiveTab('options')}><Braces size={14}/>Opciones</button>
+          <button type="button" className={`ct-tab ${showPreview?'active':''}`} onClick={()=>setShowPreview(!showPreview)}><Code2 size={14}/>SQL</button>
+        </div>
+      </div>
+
+      {activeTab==='columns'&&<>
+        {/* Quick add bar */}
+        <div className="ct-quick-bar">
+          <span className="muted" style={{fontSize:11,fontWeight:600}}>AGREGAR RÁPIDO:</span>
+          {quickFields.map(qf=><button key={qf.label} type="button" className="ct-quick-btn" onClick={()=>addQuickField(qf)} title={qf.label}><qf.icon size={12}/>{qf.label}</button>)}
+        </div>
+
+        {/* Column list */}
+        <div className="ct-columns">
+          {cols.map((c,i)=>{
+            const typeDef = DDL_TYPES.find(t=>t.v===c.data_type);
+            const Icon = typeDef?.icon ?? Text;
+            const isExpanded = expandedRow===i;
+            const isFk = c.data_type==='relation';
+            return <div key={i} className={`ct-col-card ${isFk?'ct-col-fk':''}`}>
+              <div className="ct-col-row">
+                <div className="ct-col-drag">
+                  <button type="button" className="ct-drag-btn" onClick={()=>moveCol(i,-1)} disabled={i===0} title="Subir">▲</button>
+                  <button type="button" className="ct-drag-btn" onClick={()=>moveCol(i,1)} disabled={i===cols.length-1} title="Bajar">▼</button>
+                </div>
+                <div className="ct-col-icon" style={{background:typeDef?.color+'15',color:typeDef?.color}}><Icon size={15}/></div>
+                <input value={c.name} onChange={e=>updateCol(i,{name:e.target.value})} placeholder={isFk?'cliente_id':'nombre_columna'} className="ct-col-name" required/>
+                <select value={c.data_type} onChange={e=>updateCol(i,{data_type:e.target.value})} className="ct-col-type">
+                  {Object.entries(groups).map(([g,items])=><optgroup key={g} label={g}>{items.map(t=><option key={t.v} value={t.v}>{t.l} — {t.desc}</option>)}</optgroup>)}
+                </select>
+                {['string','email','phone','url'].includes(c.data_type)&&<input type="number" value={c.length} min={1} max={65535} onChange={e=>updateCol(i,{length:Number(e.target.value)})} className="ct-col-len" title="Longitud"/>}
+                <div className="ct-col-toggles">
+                  <button type="button" className={`ct-toggle ${!c.nullable?'on':''}`} onClick={()=>updateCol(i,{nullable:!c.nullable})} title={c.nullable?'Nullable':'NOT NULL'}>{c.nullable?'N':'NN'}</button>
+                  <button type="button" className={`ct-toggle ${c.unique?'on':''}`} onClick={()=>updateCol(i,{unique:!c.unique})} title="Unique">UQ</button>
+                  {c.data_type==='integer'&&<button type="button" className={`ct-toggle ${c.unsigned?'on':''}`} onClick={()=>updateCol(i,{unsigned:!c.unsigned})} title="Unsigned">UN</button>}
+                </div>
+                <button type="button" className="ct-col-expand" onClick={()=>setExpandedRow(isExpanded?null:i)} title="Configuración avanzada"><Pencil size={13}/></button>
+                <button type="button" className="ct-col-del" onClick={()=>setCols(v=>v.filter((_,j)=>j!==i))} disabled={cols.length===1} title="Eliminar"><X size={14}/></button>
+              </div>
+
+              {isFk&&<div className="ct-col-fk-config">
+                <Link size={13} style={{color:'#4f46e5',flexShrink:0}}/>
+                <select value={c.fk_table} onChange={e=>updateCol(i,{fk_table:e.target.value,fk_column:'id'})} className="ct-fk-sel" required>
+                  <option value="">Seleccionar tabla…</option>
+                  {tables.filter(t=>t!==name).map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+                {c.fk_table&&<span className="ct-fk-arrow">→</span>}
+                {c.fk_table&&<select value={c.fk_column} onChange={e=>updateCol(i,{fk_column:e.target.value})} className="ct-fk-col-sel">
+                  {(refColsMap[c.fk_table]??['id']).map(col=><option key={col} value={col}>{col}</option>)}
+                </select>}
+                {c.fk_table&&<select value={c.fk_on_delete} onChange={e=>updateCol(i,{fk_on_delete:e.target.value})} className="ct-fk-action">
+                  <option value="SET NULL">ON DELETE SET NULL</option>
+                  <option value="CASCADE">ON DELETE CASCADE</option>
+                  <option value="RESTRICT">ON DELETE RESTRICT</option>
+                  <option value="NO ACTION">ON DELETE NO ACTION</option>
+                </select>}
+                {c.fk_table&&<span className="ct-fk-badge">FK</span>}
+              </div>}
+
+              {isExpanded&&!isFk&&<div className="ct-col-advanced">
+                <label className="control"><span>Default</span><input value={c.default_value} onChange={e=>updateCol(i,{default_value:e.target.value})} placeholder="NULL"/></label>
+                {c.data_type==='enum'&&<label className="control"><span>Valores (separados por coma)</span><input value={c.enum_values} onChange={e=>updateCol(i,{enum_values:e.target.value})} placeholder="activo,inactivo,pendiente" required/></label>}
+                <label className="control"><span>Comentario</span><input value={c.comment} onChange={e=>updateCol(i,{comment:e.target.value})} placeholder="Descripción de la columna"/></label>
+              </div>}
+            </div>;
+          })}
+          <button type="button" className="ct-add-col" onClick={()=>setCols(v=>[...v,makeEmptyCol()])}><Plus size={15}/>Agregar columna vacía</button>
+        </div>
+      </>}
+
+      {activeTab==='options'&&<div className="ct-options-panel">
+        <div className="ct-opt-group">
+          <h4><Calendar size={14}/>Timestamps</h4>
+          <label className="ct-opt-row"><input type="checkbox" checked={opts.timestamps} onChange={e=>setOpts({...opts,timestamps:e.target.checked})}/><div><b>created_at / updated_at</b><small>Columnas de auditoría automática</small></div></label>
+          <label className="ct-opt-row"><input type="checkbox" checked={opts.softDeletes} onChange={e=>setOpts({...opts,softDeletes:e.target.checked})}/><div><b>deleted_at</b><small>Soft delete (no elimina registros físicamente)</small></div></label>
+        </div>
+        <div className="ct-opt-group">
+          <h4><Key size={14}/>Primary Key</h4>
+          <label className="ct-opt-row"><input type="checkbox" checked={opts.uuidPk} onChange={e=>setOpts({...opts,uuidPk:e.target.checked})}/><div><b>UUID como PK</b><small>En vez de auto-incremental, usa CHAR(36)</small></div></label>
+        </div>
+        <div className="ct-opt-group">
+          <h4><Database size={14}/>Motor y Charset</h4>
+          <div className="form-grid three">
+            <label className="control"><span>Motor</span><select value={opts.engine} onChange={e=>setOpts({...opts,engine:e.target.value})}><option>InnoDB</option><option>MyISAM</option></select></label>
+            <label className="control"><span>Charset</span><select value={opts.charset} onChange={e=>setOpts({...opts,charset:e.target.value})}><option>utf8mb4</option><option>utf8</option><option>latin1</option><option>ascii</option></select></label>
+            <label className="control"><span>Collation</span><select value={opts.collation} onChange={e=>setOpts({...opts,collation:e.target.value})}><option>utf8mb4_unicode_ci</option><option>utf8mb4_general_ci</option><option>utf8mb4_bin</option><option>utf8_general_ci</option></select></label>
+          </div>
+        </div>
+        <div className="ct-opt-group">
+          <h4><Table2 size={14}/>Resumen</h4>
+          <div className="ct-summary">
+            <div className="ct-sum-item"><span className="ct-sum-num">{colCount}</span><span>Columnas</span></div>
+            <div className="ct-sum-item"><span className="ct-sum-num">{fkCount}</span><span>Foreign Keys</span></div>
+            <div className="ct-sum-item"><span className="ct-sum-num">{opts.timestamps?2:0}</span><span>Timestamps</span></div>
+            <div className="ct-sum-item"><span className="ct-sum-num">{opts.softDeletes?1:0}</span><span>Soft Delete</span></div>
+          </div>
+        </div>
+      </div>}
+
+      {showPreview&&<div className="ct-sql-preview">
+        <div className="ct-sql-header"><Code2 size={14}/><strong>Vista previa SQL</strong><button type="button" className="button ghost" onClick={()=>navigator.clipboard.writeText(generatePreview())}>Copiar</button></div>
+        <pre><code>{generatePreview()}</code></pre>
+      </div>}
+
       {error&&<p className="error-box">{error}</p>}
-      <div className="modal-actions"><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><button className="button primary" disabled={busy||!name.trim()}>{busy?<LoaderCircle className="spin" size={15}/>:null}Crear tabla</button></div>
+      <div className="modal-actions">
+        <div className="ct-final-summary">
+          <span>{colCount} columnas</span>
+          {fkCount>0&&<span>· {fkCount} FKs</span>}
+          {opts.timestamps&&<span>· timestamps</span>}
+          {opts.softDeletes&&<span>· soft deletes</span>}
+        </div>
+        <div className="modal-actions-right">
+          <button type="button" className="button ghost" onClick={onClose}>Cancelar</button>
+          <button className="button primary" disabled={busy||!name.trim()}>{busy?<LoaderCircle className="spin" size={15}/>:null}Crear tabla</button>
+        </div>
+      </div>
     </form>
   </ModalShell>;
 }

@@ -3,7 +3,7 @@ export interface SchemaColumn { name:string; type:string; collation?:string|null
 export interface SchemaIndex { name:string; unique:boolean; columns:string[]; }
 export interface DbForeignKey { constraint_name:string; column_name:string; referenced_table_name:string; referenced_column_name:string; delete_rule:string; }
 export interface RelationOption { id:string|number; label:string; }
-export interface SchemaTableDetail { table:string; managed_by?:string|null; rows:number; columns:SchemaColumn[]; indexes:SchemaIndex[]; }
+export interface SchemaTableDetail { table:string; managed_by?:string|null; rows:number; columns:SchemaColumn[]; indexes:SchemaIndex[]; foreign_keys:DbForeignKey[]; }
 export interface SchemaRelationModule { table:string; name:string; relations:{column:string;target_table?:string;target_module?:string}[]; }
 export interface DbOverviewTable { name:string; engine:string; rows:number|null; size_kb:string; collation:string; }
 export interface BrowsePage { data:Record<string,unknown>[]; total:number; current_page:number; last_page:number; per_page:number; }

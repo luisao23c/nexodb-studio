@@ -39,7 +39,19 @@ class SchemaExplorerController extends Controller
             'columns' => $rows->sortBy('Seq_in_index')->pluck('Column_name')->all(),
         ])->values();
 
-        return response()->json(['table' => $table, 'managed_by' => null, 'rows' => DB::table($table)->count(), 'columns' => $columns, 'indexes' => $indexes]);
+        $foreignKeys = collect(DB::select(
+            'SELECT kcu.COLUMN_NAME, kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME, rc.DELETE_RULE
+             FROM information_schema.KEY_COLUMN_USAGE kcu
+             JOIN information_schema.REFERENTIAL_CONSTRAINTS rc USING (CONSTRAINT_NAME, CONSTRAINT_SCHEMA)
+             WHERE kcu.CONSTRAINT_SCHEMA = DATABASE() AND kcu.TABLE_NAME = ?', [$table]
+        ))->map(fn ($fk) => [
+            'column_name' => $fk->COLUMN_NAME,
+            'referenced_table_name' => $fk->REFERENCED_TABLE_NAME,
+            'referenced_column_name' => $fk->REFERENCED_COLUMN_NAME,
+            'on_delete' => $fk->DELETE_RULE,
+        ])->values();
+
+        return response()->json(['table' => $table, 'managed_by' => null, 'rows' => DB::table($table)->count(), 'columns' => $columns, 'indexes' => $indexes, 'foreign_keys' => $foreignKeys]);
     }
 
     public function relations(): JsonResponse

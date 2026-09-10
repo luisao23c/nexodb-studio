@@ -9,18 +9,34 @@ use Illuminate\Validation\ValidationException;
 class DynamicTableService
 {
     public const PREFIX = 'nx_';
-    public const DATA_TYPES = ['string','text','integer','decimal','boolean','date','datetime','relation'];
+    public const DATA_TYPES = ['string','text','mediumtext','longtext','integer','int','smallint','decimal','float','double','boolean','date','datetime','timestamp','time','year','email','phone','url','json','uuid','binary','enum','relation'];
     public const INPUT_TYPES = ['text','textarea','number','email','date','datetime-local','checkbox','select','autocomplete','multiselect'];
 
     /** Map of logical types to SQL column definitions fragment. */
     public const SQL_TYPE_MAP = [
         'string' => 'VARCHAR(:length)',
         'text' => 'TEXT',
+        'mediumtext' => 'MEDIUMTEXT',
+        'longtext' => 'LONGTEXT',
         'integer' => 'BIGINT',
+        'int' => 'INT',
+        'smallint' => 'SMALLINT',
         'decimal' => 'DECIMAL(15,2)',
+        'float' => 'FLOAT',
+        'double' => 'DOUBLE',
         'boolean' => 'TINYINT(1)',
         'date' => 'DATE',
         'datetime' => 'DATETIME',
+        'timestamp' => 'TIMESTAMP',
+        'time' => 'TIME',
+        'year' => 'YEAR',
+        'email' => 'VARCHAR(255)',
+        'phone' => 'VARCHAR(30)',
+        'url' => 'VARCHAR(500)',
+        'json' => 'JSON',
+        'uuid' => 'CHAR(36)',
+        'binary' => 'BLOB',
+        'enum' => "ENUM(:enum_values)",
         'relation' => 'BIGINT UNSIGNED',
     ];
 
@@ -48,12 +64,14 @@ class DynamicTableService
     public function modifyColumn(string $table, string $column, array $physical): void
     {
         $definition = $this->columnDefinition($physical);
+        $unsigned = !empty($physical['unsigned']) ? ' unsigned' : '';
         $null = ($physical['nullable'] ?? true) ? 'NULL' : 'NOT NULL';
         $default = isset($physical['default_value']) && $physical['default_value'] !== ''
             ? 'DEFAULT '.$this->sqlQuote($physical['default_value'], $physical['data_type'] ?? 'string')
-            : 'NULL';
+            : ($null === 'NOT NULL' ? '' : '');
+        $comment = !empty($physical['comment']) ? ' COMMENT '.DB::getPdo()->quote($physical['comment']) : '';
         $after = isset($physical['after']) && $physical['after'] !== '' ? ' AFTER `'.$physical['after'].'`' : '';
-        DB::statement("ALTER TABLE `{$table}` MODIFY `{$column}` {$definition} {$null} {$default}{$after}");
+        DB::statement("ALTER TABLE `{$table}` MODIFY `{$column}` {$definition}{$unsigned} {$null}{$default}{$comment}{$after}");
         if (! empty($physical['unique'])) {
             $indexName = $column.'_unique';
             $exists = collect(DB::select("SHOW INDEX FROM `{$table}` WHERE Key_name = ?", [$indexName]))->isNotEmpty();
@@ -114,11 +132,13 @@ class DynamicTableService
     public function addColumnRaw(string $table, string $name, array $data): void
     {
         $definition = $this->columnDefinition($data);
+        $unsigned = !empty($data['unsigned']) ? ' unsigned' : '';
         $null = ($data['nullable'] ?? true) ? 'NULL' : 'NOT NULL';
         $default = isset($data['default_value']) && $data['default_value'] !== ''
             ? 'DEFAULT '.$this->sqlQuote($data['default_value'], $data['data_type'] ?? 'string')
-            : 'NULL';
-        DB::statement("ALTER TABLE `{$table}` ADD `{$name}` {$definition} {$null} {$default}");
+            : ($null === 'NOT NULL' ? '' : '');
+        $comment = !empty($data['comment']) ? ' COMMENT '.DB::getPdo()->quote($data['comment']) : '';
+        DB::statement("ALTER TABLE `{$table}` ADD `{$name}` {$definition}{$unsigned} {$null}{$default}{$comment}");
         if (! empty($data['unique'])) DB::statement("ALTER TABLE `{$table}` ADD UNIQUE KEY `{$name}_unique` (`{$name}`)");
     }
 
@@ -128,7 +148,12 @@ class DynamicTableService
         $template = self::SQL_TYPE_MAP[$type] ?? null;
         if ($template === null) throw ValidationException::withMessages(['data_type' => 'Tipo de dato no permitido.']);
 
-        return str_replace(':length', (string) ($physical['length'] ?: 255), $template);
+        $result = str_replace(':length', (string) ($physical['length'] ?: 255), $template);
+        if ($type === 'enum' && !empty($physical['enum_values'])) {
+            $values = array_map(fn($v) => "'".trim($v)."'", explode(',', $physical['enum_values']));
+            $result = str_replace(':enum_values', implode(',', $values), $result);
+        }
+        return $result;
     }
 
     public function sqlQuote(mixed $value, string $type): string

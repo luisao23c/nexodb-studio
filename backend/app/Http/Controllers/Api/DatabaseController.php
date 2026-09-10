@@ -158,8 +158,10 @@ class DatabaseController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:60',
             'data_type' => ['required', \Illuminate\Validation\Rule::in(\App\Services\DynamicTableService::DATA_TYPES)],
-            'length' => 'nullable|integer|min:1|max:1000', 'nullable' => 'boolean',
+            'length' => 'nullable|integer|min:1|max:65535', 'nullable' => 'boolean',
             'default_value' => 'nullable|string|max:255', 'unique' => 'boolean',
+            'unsigned' => 'boolean', 'comment' => 'nullable|string|max:255',
+            'enum_values' => 'nullable|string|max:500',
         ]);
         $name = $tables->safeColumnName($data['name']);
         abort_if(\Illuminate\Support\Facades\Schema::hasColumn($table, $name), 422, 'La columna ya existe.');
@@ -173,8 +175,10 @@ class DatabaseController extends Controller
         $this->assertSafeTable($table);
         $data = $request->validate([
             'data_type' => ['required', \Illuminate\Validation\Rule::in(\App\Services\DynamicTableService::DATA_TYPES)],
-            'length' => 'nullable|integer|min:1|max:1000', 'nullable' => 'boolean',
+            'length' => 'nullable|integer|min:1|max:65535', 'nullable' => 'boolean',
             'default_value' => 'nullable|string|max:255', 'unique' => 'boolean',
+            'unsigned' => 'boolean', 'comment' => 'nullable|string|max:255',
+            'enum_values' => 'nullable|string|max:500',
         ]);
         abort_unless(\Illuminate\Support\Facades\Schema::hasColumn($table, $column), 404, 'La columna no existe.');
         $tables->modifyColumn($table, $column, $data);
@@ -201,14 +205,28 @@ class DatabaseController extends Controller
             'columns' => 'nullable|array|max:30',
             'columns.*.name' => 'required|string|max:60',
             'columns.*.data_type' => ['required', \Illuminate\Validation\Rule::in(\App\Services\DynamicTableService::DATA_TYPES)],
-            'columns.*.length' => 'nullable|integer|min:1|max:1000',
+            'columns.*.length' => 'nullable|integer|min:1|max:65535',
             'columns.*.nullable' => 'boolean',
+            'columns.*.unique' => 'boolean',
+            'columns.*.unsigned' => 'boolean',
             'columns.*.default_value' => 'nullable|string|max:255',
+            'columns.*.comment' => 'nullable|string|max:255',
+            'columns.*.enum_values' => 'nullable|string|max:500',
+            'add_timestamps' => 'boolean',
+            'add_soft_deletes' => 'boolean',
+            'use_uuid_pk' => 'boolean',
         ]);
         $name = $tables->safeTableName($data['name']);
         abort_if(\Illuminate\Support\Facades\Schema::hasTable($name), 422, 'La tabla ya existe.');
-        \Illuminate\Support\Facades\Schema::create($name, function (\Illuminate\Database\Schema\Blueprint $t) {
-            $t->id(); $t->timestamps();
+        \Illuminate\Support\Facades\Schema::create($name, function (\Illuminate\Database\Schema\Blueprint $t) use ($data) {
+            if ($data['use_uuid_pk'] ?? false) {
+                $t->char('id', 36);
+                $t->primary('id');
+            } else {
+                $t->id();
+            }
+            if ($data['add_timestamps'] ?? true) { $t->timestamps(); }
+            if ($data['add_soft_deletes'] ?? false) { $t->softDeletes(); }
         });
         foreach ($data['columns'] ?? [] as $col) {
             $colName = $tables->safeColumnName($col['name']);
