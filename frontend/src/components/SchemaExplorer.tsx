@@ -253,55 +253,92 @@ function RowModal({table,columns,row,onClose,onDone}:{table:string;columns:Schem
 }
 
 /* ================= SQL console with autocomplete ================= */
+type SqlSuggestion = { value:string; label:string; detail:string; kind:'keyword'|'table'|'column'|'function' };
+
 function SqlTab(){
   const [sql,setSql] = useState('SELECT TABLE_NAME, TABLE_ROWS, ROUND((DATA_LENGTH+INDEX_LENGTH)/1024,1) AS size_kb\nFROM information_schema.TABLES\nWHERE TABLE_SCHEMA = DATABASE()');
   const [result,setResult] = useState<{columns:string[];rows:Record<string,unknown>[];count:number;elapsed_ms:number}|null>(null);
   const [error,setError] = useState(''); const [running,setRunning] = useState(false);
-  const [suggestions,setSuggestions] = useState<string[]>([]);
+  const [suggestions,setSuggestions] = useState<SqlSuggestion[]>([]);
   const [showSug,setShowSug] = useState(false);
   const [sugIdx,setSugIdx] = useState(0);
+  const [cursor,setCursor] = useState({line:1,column:1});
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const tablesRef = useRef<string[]>([]);
+  const schemaRef = useRef<Record<string,string[]>>({});
 
-  useEffect(()=>{ api.schemaTables().then(r=>{ tablesRef.current=r.tables.map(t=>t.name); }).catch(()=>{}); },[]);
+  useEffect(()=>{
+    api.schemaTables().then(async r=>{
+      tablesRef.current=r.tables.map(t=>t.name);
+      const schemas=await Promise.all(r.tables.map(async table=>{
+        try{ const detail=await api.schemaTable(table.name); return [table.name,detail.columns.map(c=>c.name)] as const; }
+        catch{ return [table.name,[]] as const; }
+      }));
+      schemaRef.current=Object.fromEntries(schemas);
+    }).catch(()=>{});
+  },[]);
 
-  const SQL_KEYWORDS = ['SELECT','FROM','WHERE','AND','OR','JOIN','LEFT','RIGHT','INNER','ON','GROUP BY','ORDER BY','HAVING','LIMIT','OFFSET','SHOW','TABLES','DESCRIBE','EXPLAIN','DISTINCT','AS','IN','NOT','NULL','IS','LIKE','BETWEEN','EXISTS','COUNT','SUM','AVG','MIN','MAX','ROUND','ASC','DESC','INNER JOIN','LEFT JOIN','RIGHT JOIN','CROSS JOIN','UNION','ALL'];
+  const SQL_KEYWORDS = ['SELECT','FROM','WHERE','AND','OR','JOIN','LEFT JOIN','RIGHT JOIN','INNER JOIN','CROSS JOIN','ON','GROUP BY','ORDER BY','HAVING','LIMIT','OFFSET','SHOW','SHOW TABLES','DESCRIBE','EXPLAIN','DISTINCT','AS','IN','NOT','NULL','IS','LIKE','BETWEEN','EXISTS','ASC','DESC','UNION','ALL','CASE','WHEN','THEN','ELSE','END'];
+  const SQL_FUNCTIONS = ['COUNT','SUM','AVG','MIN','MAX','ROUND','COALESCE','CONCAT','DATE','NOW'];
 
-  function getSuggestions(word:string){
-    if(!word||word.length<1) return[];
-    const upper=word.toUpperCase();
-    const kw=SQL_KEYWORDS.filter(k=>k.startsWith(upper)&&k!==word);
-    const tbl=tablesRef.current.filter(t=>t.toLowerCase().startsWith(word.toLowerCase()));
-    return[...kw,...tbl].slice(0,12);
+  function getSuggestions(before:string,showAll=false):SqlSuggestion[]{
+    const token=before.match(/([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?)$/)?.[1]??'';
+    if(!token&&!showAll)return[];
+    const lower=token.toLowerCase();
+    const afterSource=/\b(?:from|join|describe|desc)\s+[a-zA-Z_]*$/i.test(before);
+    const suggestions:SqlSuggestion[]=[];
+    if(token.includes('.')){
+      const [tablePrefix,columnPrefix='']=token.split('.');
+      const table=tablesRef.current.find(t=>t.toLowerCase()===tablePrefix.toLowerCase());
+      if(table){
+        (schemaRef.current[table]??[]).filter(column=>column.toLowerCase().startsWith(columnPrefix.toLowerCase())).forEach(column=>suggestions.push({value:`${table}.${column}`,label:column,detail:table,kind:'column'}));
+        return suggestions.slice(0,14);
+      }
+    }
+    const referencedTables=[...before.matchAll(/\b(?:FROM|JOIN)\s+([a-zA-Z_]\w*)/gi)].map(match=>match[1]);
+    referencedTables.forEach(table=>{
+      (schemaRef.current[table]??[]).filter(column=>showAll||column.toLowerCase().startsWith(lower)).forEach(column=>suggestions.push({value:column,label:column,detail:`Columna · ${table}`,kind:'column'}));
+    });
+    tablesRef.current.filter(table=>showAll||table.toLowerCase().startsWith(lower)).forEach(table=>suggestions.push({value:table,label:table,detail:`Tabla · ${(schemaRef.current[table]??[]).length} campos`,kind:'table'}));
+    if(!afterSource){
+      SQL_KEYWORDS.filter(keyword=>showAll||keyword.toLowerCase().startsWith(lower)).forEach(keyword=>suggestions.push({value:keyword,label:keyword,detail:'Palabra clave SQL',kind:'keyword'}));
+      SQL_FUNCTIONS.filter(fn=>showAll||fn.toLowerCase().startsWith(lower)).forEach(fn=>suggestions.push({value:fn,label:fn,detail:'Función SQL',kind:'function'}));
+    }
+    return suggestions.filter((item,index,list)=>list.findIndex(other=>other.value===item.value)===index).slice(0,14);
+  }
+
+  function updateCursor(el:HTMLTextAreaElement){
+    const before=el.value.slice(0,el.selectionStart);
+    const lines=before.split('\n');
+    setCursor({line:lines.length,column:(lines.at(-1)?.length??0)+1});
   }
 
   function handleInput(e:React.ChangeEvent<HTMLTextAreaElement>){
     const val=e.target.value; setSql(val);
     const pos=e.target.selectionStart;
     const before=val.slice(0,pos);
-    const match=before.match(/([a-zA-Z_]\w*)$/);
-    if(match){
-      const sg=getSuggestions(match[1]);
-      setSuggestions(sg); setShowSug(sg.length>0); setSugIdx(0);
-    }else{ setShowSug(false); }
+    const sg=getSuggestions(before);
+    setSuggestions(sg); setShowSug(sg.length>0); setSugIdx(0); updateCursor(e.target);
   }
 
-  function insertSuggestion(sug:string){
+  function insertSuggestion(sug:SqlSuggestion){
     const el=editorRef.current; if(!el) return;
     const pos=el.selectionStart;
     const before=sql.slice(0,pos);
     const after=sql.slice(pos);
-    const match=before.match(/([a-zA-Z_]\w*)$/);
-    if(match){
-      const start=pos-match[1].length;
-      const newSql=sql.slice(0,start)+sug+after;
-      setSql(newSql); setShowSug(false);
-      setTimeout(()=>{el.selectionStart=el.selectionEnd=start+sug.length;el.focus();},0);
-    }
+    const match=before.match(/([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?)$/);
+    const start=match?pos-match[1].length:pos;
+    const inserted=sug.value+(sug.kind==='function'?'()':'');
+    const newSql=sql.slice(0,start)+inserted+after;
+    setSql(newSql); setShowSug(false);
+    setTimeout(()=>{const next=start+inserted.length-(sug.kind==='function'?1:0);el.selectionStart=el.selectionEnd=next;el.focus();updateCursor(el);},0);
   }
 
   function handleKeyDown(e:React.KeyboardEvent<HTMLTextAreaElement>){
     if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();void run();return;}
+    if(e.key===' '&&(e.ctrlKey||e.metaKey)){
+      e.preventDefault(); const before=e.currentTarget.value.slice(0,e.currentTarget.selectionStart); const sg=getSuggestions(before,true); setSuggestions(sg); setShowSug(sg.length>0); setSugIdx(0); return;
+    }
     if(!showSug) return;
     if(e.key==='ArrowDown'){e.preventDefault();setSugIdx(i=>Math.min(i+1,suggestions.length-1));}
     else if(e.key==='ArrowUp'){e.preventDefault();setSugIdx(i=>Math.max(i-1,0));}
@@ -311,21 +348,25 @@ function SqlTab(){
   }
 
   async function run(){ setRunning(true); setError(''); try{ setResult(await api.runSql(sql)); }catch(e){ setError((e as Error).message); setResult(null); }finally{ setRunning(false); } }
+  function useSnippet(snippet:string){ setSql(snippet); setShowSug(false); setTimeout(()=>editorRef.current?.focus(),0); }
 
-  return <div className="panel sql-panel">
-    <div className="panel-head slim"><div><span className="kicker"><Play size={13}/>Consola</span><h2>SQL de sólo lectura</h2></div>
-      <span className="pill raw"><AlertTriangle size={11}/>SELECT · SHOW · DESCRIBE · EXPLAIN</span></div>
+  return <div className="panel sql-panel sql-workbench">
+    <div className="panel-head slim sql-workbench-head"><div><span className="kicker"><Play size={13}/>Consola asistida</span><h2>Editor SQL de sólo lectura</h2><p>Explora datos y estructura con sugerencias de tablas, columnas, funciones y comandos.</p></div>
+      <span className="sql-safe-badge"><CheckCircle size={12}/>Conexión protegida · sin escritura</span></div>
     <div className="sql-editor-wrap">
+      <div className="sql-editor-toolbar"><div><button type="button" onClick={()=>useSnippet('SELECT *\nFROM ')}>SELECT *</button><button type="button" onClick={()=>useSnippet('SHOW TABLES;')}>SHOW TABLES</button><button type="button" onClick={()=>useSnippet(`DESCRIBE ${tablesRef.current[0]??''};`)}>DESCRIBE</button></div><span><Sparkles size={12}/>Autocompletado activo</span></div>
       <div className="sql-editor-container">
-        <textarea ref={editorRef} className="code-editor sql" value={sql} onChange={handleInput} onKeyDown={handleKeyDown} onBlur={()=>setTimeout(()=>setShowSug(false),150)} spellCheck={false} aria-label="Consulta SQL"/>
+        <div className="sql-gutter" aria-hidden="true">{sql.split('\n').map((_,i)=><span key={i}>{i+1}</span>)}</div>
+        <textarea ref={editorRef} className="code-editor sql" value={sql} onChange={handleInput} onKeyDown={handleKeyDown} onClick={e=>updateCursor(e.currentTarget)} onKeyUp={e=>updateCursor(e.currentTarget)} onBlur={()=>setTimeout(()=>setShowSug(false),150)} spellCheck={false} aria-label="Consulta SQL"/>
         {showSug&&suggestions.length>0&&<div className="sql-suggestions">
-          {suggestions.map((s,i)=><button key={s} className={`sql-sug-item ${i===sugIdx?'active':''}`} onMouseDown={e=>{e.preventDefault();insertSuggestion(s);}}>
-            {tablesRef.current.includes(s)?<Database size={12}/>:<Code2 size={12}/>}
-            <span>{s}</span>
+          <div className="sql-suggestions-title">Sugerencias</div>
+          {suggestions.map((s,i)=><button key={`${s.kind}-${s.value}`} className={`sql-sug-item ${i===sugIdx?'active':''}`} onMouseDown={e=>{e.preventDefault();insertSuggestion(s);}}>
+            {s.kind==='table'?<Database size={13}/>:s.kind==='column'?<Braces size={13}/>:s.kind==='function'?<Sigma size={13}/>:<Code2 size={13}/>}<span>{s.label}</span><small>{s.detail}</small><em>{s.kind==='keyword'?'SQL':s.kind==='function'?'FN':s.kind==='table'?'TABLA':'CAMPO'}</em>
           </button>)}
         </div>}
       </div>
-      <div className="sql-run"><button className="button primary" onClick={()=>void run()} disabled={running}>{running?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>}Ejecutar (Ctrl+Enter)</button></div></div>
+      <div className="sql-editor-status"><span>Línea {cursor.line}, columna {cursor.column}</span><span><kbd>Ctrl</kbd> + <kbd>Espacio</kbd> sugerencias</span><span><kbd>Tab</kbd> completar</span><span>UTF-8 · MySQL</span></div>
+      <div className="sql-run"><span><AlertTriangle size={13}/>Sólo se permiten consultas seguras de lectura</span><button className="button primary" onClick={()=>void run()} disabled={running}>{running?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>}Ejecutar consulta <kbd>Ctrl↵</kbd></button></div></div>
     {error&&<p className="error-box">{error}</p>}
     {result&&<div className="sql-results">
       <p className="sql-meta">{result.count} filas · {result.elapsed_ms} ms</p>
@@ -447,6 +488,7 @@ function CreateTableModal({onClose,onCreated}:{onClose:()=>void;onCreated:(table
   const [expandedRow,setExpandedRow] = useState<number|null>(null);
   const [activeTab,setActiveTab] = useState<'columns'|'options'|'review'>('columns');
   const [selectedTemplate,setSelectedTemplate] = useState('blank');
+  const [quickFieldChoice,setQuickFieldChoice] = useState('');
 
   useEffect(()=>{ api.schemaTables().then(r=>setTables(r.tables.map(t=>t.name))).catch(()=>{}); },[]);
 
@@ -600,7 +642,7 @@ function CreateTableModal({onClose,onCreated}:{onClose:()=>void;onCreated:(table
                 </article>;
               })}</div>
               {(hasDuplicates||hasIncompleteFields)&&<div className="ct-validation-warning"><AlertTriangle size={15}/>{hasDuplicates?'Hay campos con el mismo nombre. Cada nombre debe ser único.':'Completa el nombre y la configuración de todos los campos.'}</div>}
-              <div className="ct-field-shortcuts"><span>Agregar campo común:</span>{quickFields.map(qf=><button key={qf.label} type="button" onClick={()=>addQuickField(qf)}><qf.icon size={13}/>{qf.label}</button>)}</div>
+              <div className="ct-field-shortcuts"><label><span><Plus size={14}/>Agregar campo común</span><select value={quickFieldChoice} onChange={e=>{const selected=quickFields.find(qf=>qf.label===e.target.value);if(selected)addQuickField(selected);setQuickFieldChoice('');}}><option value="">Selecciona un campo preparado…</option>{quickFields.map(qf=><option key={qf.label} value={qf.label}>{qf.label}</option>)}</select></label><small>Se agregará con una configuración recomendada que puedes modificar.</small></div>
               <button type="button" className="ct-add-col" onClick={()=>{setCols(v=>[...v,makeEmptyCol()]);setSelectedTemplate('blank');}}><Plus size={15}/>Agregar campo personalizado</button>
             </section>
           </>}
