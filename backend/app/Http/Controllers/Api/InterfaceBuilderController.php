@@ -8,7 +8,9 @@ use App\Models\BuilderView;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class InterfaceBuilderController extends Controller
 {
@@ -67,6 +69,33 @@ class InterfaceBuilderController extends Controller
         return response()->json(null, 204);
     }
 
+    public function lookup(Request $request, string $table): JsonResponse
+    {
+        abort_unless(preg_match('/^[a-zA-Z0-9_]+$/', $table) && Schema::hasTable($table), 404, 'Tabla no encontrada.');
+
+        $data = $request->validate([
+            'value_column' => ['required', 'string', 'regex:/^[a-zA-Z0-9_]+$/'],
+            'label_column' => ['required', 'string', 'regex:/^[a-zA-Z0-9_]+$/'],
+            'search' => 'nullable|string|max:100',
+        ]);
+        abort_unless(Schema::hasColumn($table, $data['value_column']) && Schema::hasColumn($table, $data['label_column']), 422, 'Las columnas de la relación no existen.');
+
+        $query = DB::table($table)
+            ->select([$data['value_column'], $data['label_column']])
+            ->whereNotNull($data['value_column'])
+            ->whereNotNull($data['label_column']);
+        if (! empty($data['search'])) {
+            $query->where($data['label_column'], 'like', '%'.$data['search'].'%');
+        }
+
+        $options = $query->orderBy($data['label_column'])->limit(30)->get()->map(fn ($row) => [
+            'value' => $row->{$data['value_column']},
+            'label' => (string) $row->{$data['label_column']},
+        ]);
+
+        return response()->json($options);
+    }
+
     private function saveForm(Request $request, BuilderForm $form, int $status = 200): JsonResponse
     {
         $data = $request->validate([
@@ -74,7 +103,7 @@ class InterfaceBuilderController extends Controller
             'form_key' => ['required', 'regex:/^[a-z][a-z0-9_.-]*$/', 'max:100', Rule::unique('builder_forms', 'form_key')->ignore($form->id)],
             'table_name' => 'required|string|max:100',
             'description' => 'nullable|string|max:255',
-            'layout_columns' => 'required|integer|between:1,3',
+            'layout_columns' => 'required|integer|between:1,12',
             'submit_label' => 'required|string|max:60',
             'settings' => 'nullable|array',
             'active' => 'boolean',
@@ -92,6 +121,8 @@ class InterfaceBuilderController extends Controller
             'fields.*.config' => 'nullable|array',
         ]);
 
+        $this->validateFormReferences($data);
+
         DB::transaction(function () use ($form, $data) {
             $form->fill(collect($data)->except('fields')->all())->save();
             $form->fields()->delete();
@@ -101,6 +132,32 @@ class InterfaceBuilderController extends Controller
         });
 
         return response()->json($form->fresh('fields'), $status);
+    }
+
+    private function validateFormReferences(array $data): void
+    {
+        if (! Schema::hasTable($data['table_name'])) {
+            throw ValidationException::withMessages(['table_name' => 'La tabla destino ya no existe.']);
+        }
+
+        foreach ($data['fields'] as $index => $field) {
+            if (! empty($field['source_column']) && ! Schema::hasColumn($data['table_name'], $field['source_column'])) {
+                throw ValidationException::withMessages(["fields.$index.source_column" => 'La columna vinculada no existe en la tabla destino.']);
+            }
+            $config = $field['config'] ?? [];
+            if (($config['options_source'] ?? 'static') !== 'relation') {
+                continue;
+            }
+            $relationTable = $config['relation_table'] ?? '';
+            $valueColumn = $config['relation_value_column'] ?? '';
+            $labelColumn = $config['relation_label_column'] ?? '';
+            if (! $relationTable || ! $valueColumn || ! $labelColumn) {
+                throw ValidationException::withMessages(["fields.$index.config" => 'Completa la tabla, el valor ID y el campo visible de la relación.']);
+            }
+            if (! Schema::hasTable($relationTable) || ! Schema::hasColumns($relationTable, [$valueColumn, $labelColumn])) {
+                throw ValidationException::withMessages(["fields.$index.config" => 'La referencia configurada no existe en la base de datos.']);
+            }
+        }
     }
 
     private function saveView(Request $request, BuilderView $view, int $status = 200): JsonResponse

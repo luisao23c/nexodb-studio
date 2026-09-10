@@ -108,6 +108,7 @@ export const api = {
   deletePage: (id:number) => request<void>(`/builder/pages/${id}`,{method:'DELETE'}),
 
   // Reusable interfaces
+  lookupOptions: (table:string,valueColumn:string,labelColumn:string,search='') => request<{value:string|number;label:string}[]>(`/builder/lookups/${table}?value_column=${encodeURIComponent(valueColumn)}&label_column=${encodeURIComponent(labelColumn)}&search=${encodeURIComponent(search)}`),
   forms: () => request<BuilderForm[]>('/builder/forms'),
   formByKey: (key:string) => request<BuilderForm>(`/builder/forms/key/${encodeURIComponent(key)}`),
   createForm: (data:BuilderForm) => request<BuilderForm>('/builder/forms',{method:'POST',...json(data)}),

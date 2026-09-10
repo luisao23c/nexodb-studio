@@ -78,6 +78,7 @@ Route::middleware(['builder.admin', 'throttle:api'])->prefix('builder')->group(f
     Route::delete('/pages/{page}', [PageController::class, 'destroy']);
 
     // Reusable form and table-view designers
+    Route::get('/lookups/{table}', [InterfaceBuilderController::class, 'lookup'])->where('table', '[a-zA-Z0-9_]+');
     Route::get('/forms', [InterfaceBuilderController::class, 'forms']);
     Route::get('/forms/key/{key}', [InterfaceBuilderController::class, 'formByKey'])->where('key', '[a-z0-9_.-]+');
     Route::post('/forms', [InterfaceBuilderController::class, 'storeForm']);
