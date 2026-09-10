@@ -738,6 +738,11 @@ body{background:radial-gradient(circle at 80% 0,#eef2ff 0,transparent 32%),#f5f7
 .ce-editor .check{display:flex;align-items:center;gap:6px;font-size:11px;color:#475569;cursor:pointer}
 .ce-toggles{display:flex;gap:12px;flex-wrap:wrap}
 .ce-tabs-editor{display:flex;flex-direction:column;gap:4px}
+.ce-modal-config{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:9px;border:1px solid #ddd9fb;border-radius:8px;background:#f8f7ff}
+.ce-modal-config .control:last-child{grid-column:1/-1}
+.ce-tab-card{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid #e2e8f0;border-radius:8px;background:#fff}
+.ce-tab-content{display:grid;grid-template-columns:.7fr 1.3fr;gap:5px}
+.ce-tab-content select{min-width:0}
 .ce-tab-row{display:flex;gap:4px;align-items:center}
 .ce-tab-row input{flex:1}
 .ce-tab-row button{background:none;border:none;padding:3px;border-radius:4px;cursor:pointer;color:#94a3b8;display:flex;align-items:center}
@@ -775,3 +780,23 @@ body{background:radial-gradient(circle at 80% 0,#eef2ff 0,transparent 32%),#f5f7
 .preview-card-header small{font-size:11px;color:#94a3b8}
 .preview-card-body{padding:14px}
 .preview-unknown{display:flex;align-items:center;gap:6px;color:#94a3b8;font-size:12px}
+.rcp-resource-note{margin:2px 0 0;padding:8px 9px;border:1px solid #ddd9fb;border-radius:7px;background:#f8f7ff;color:#746aa9;font-size:10px;line-height:1.45}
+.runtime-component-title{display:flex;align-items:center;gap:8px;margin-bottom:12px;color:#5145ba}
+.runtime-component-title>div{display:flex;min-width:0;flex-direction:column}
+.runtime-component-title strong{color:#273247;font-size:14px}
+.runtime-component-title small{color:#8b95a5;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}
+.runtime-form,.runtime-view{padding:14px;border:1px solid #e1e5eb;border-radius:10px;background:#fff}
+.runtime-form-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:10px 8px}
+.runtime-field{display:flex;min-width:0;flex-direction:column;gap:4px;color:#465267;font-size:11px;font-weight:700}
+.runtime-field>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.runtime-field>span b{color:#d13f5c}
+.runtime-field input:not([type=checkbox]):not([type=radio]),.runtime-field select,.runtime-field textarea{width:100%;min-height:36px;padding:8px 9px;border:1px solid #d9dfe7;border-radius:7px;background:#fff;color:#344054;outline:none;font-size:11px;font-weight:400}
+.runtime-field input:focus,.runtime-field select:focus,.runtime-field textarea:focus{border-color:#7669dc;box-shadow:0 0 0 3px rgba(103,90,218,.1)}
+.runtime-field.invalid input,.runtime-field.invalid select,.runtime-field.invalid textarea{border-color:#d94e69}.runtime-field em{color:#c83b58;font-size:9px;font-style:normal}.runtime-field small{color:#8d97a6;font-size:9px;font-weight:400}
+.runtime-options{display:flex;min-height:36px;align-items:center;flex-wrap:wrap;gap:10px}.runtime-options label,.runtime-check{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:500}.runtime-options input,.runtime-check input{accent-color:#6659d6}
+.runtime-heading{grid-column:1/-1}.runtime-heading h3{margin:0;color:#253044;font:800 16px Manrope}.runtime-heading p{margin:2px 0 0;color:#8b95a5;font-size:10px}.runtime-divider{grid-column:1/-1;display:flex;align-items:center;gap:8px;color:#8b95a5;font-size:9px}.runtime-divider:before,.runtime-divider:after{content:'';height:1px;flex:1;background:#e2e6ec}
+.runtime-form-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:14px;padding-top:11px;border-top:1px solid #edf0f3}.runtime-form-actions .button{padding:8px 12px;font-size:10px}
+.runtime-view-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.runtime-view-toolbar>div{display:flex;align-items:center;gap:5px;width:min(320px,70%);padding:0 8px;border:1px solid #dce1e8;border-radius:7px;color:#98a2b1}.runtime-view-toolbar input{width:100%;padding:8px 0;border:0;outline:0;font-size:11px}.runtime-view-toolbar .button{padding:8px 10px;font-size:10px}
+.runtime-table-wrap{overflow:auto;border:1px solid #e2e6ec;border-radius:8px}.runtime-table-wrap table{width:100%;border-collapse:collapse;font-size:10px}.runtime-table-wrap th{padding:8px 9px;border-bottom:1px solid #e2e6ec;background:#f8fafc;color:#6c7788;text-align:left;text-transform:uppercase;letter-spacing:.04em;font-size:9px}.runtime-table-wrap td{padding:9px;border-bottom:1px solid #edf0f3;color:#4a5668;white-space:nowrap}.runtime-row-actions{display:flex;gap:4px}.runtime-row-actions button{padding:4px 6px;border:1px solid #dce1e8;border-radius:5px;background:#fff;color:#6256cf;font-size:9px}
+.runtime-button{display:flex;align-items:center}.runtime-modal-backdrop{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:24px;background:rgba(15,23,42,.58);backdrop-filter:blur(3px)}.runtime-modal{width:min(880px,96vw);max-height:88vh;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.18);border-radius:16px;background:#f7f8fb;box-shadow:0 28px 80px rgba(15,23,42,.35);overflow:hidden}.runtime-modal>header{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #e0e5eb;background:#fff}.runtime-modal>header span{color:#7166c8;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.09em}.runtime-modal>header h2{margin:3px 0 0;color:#273247;font:800 17px Manrope}.runtime-modal>header button{width:32px;height:32px;display:grid;place-items:center;border:1px solid #e0e4ea;border-radius:8px;background:#fff;color:#6f7a8b}.runtime-modal-body{padding:16px;overflow:auto}
+.runtime-tabs{background:#fff}.runtime-tabs .preview-tabs-content{background:#f8fafc}.runtime-tabs .runtime-form,.runtime-tabs .runtime-view{margin:0}.runtime-missing{min-height:90px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:16px;border:1px dashed #d5dbe4;border-radius:9px;background:#fafbfc;color:#929cab;font-size:11px}
+@media(max-width:760px){.ce-modal-config,.ce-tab-content{grid-template-columns:1fr}.ce-modal-config .control:last-child{grid-column:auto}.runtime-form-grid{grid-template-columns:1fr}.runtime-field,.runtime-heading,.runtime-divider{grid-column:1/-1!important}.runtime-modal-backdrop{padding:10px}.runtime-modal{max-height:94vh}.runtime-view-toolbar{align-items:stretch;flex-direction:column}.runtime-view-toolbar>div{width:100%}}

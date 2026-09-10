@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, GripVertical, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, Columns3, Rows3, Maximize2, CreditCard, LoaderCircle, Copy, Check, X } from 'lucide-react';
 import { api } from '../api/client';
-import type { BuilderRoute } from '../types';
+import type { BuilderForm, BuilderRoute, BuilderView } from '../types';
 import { ComponentPalette, ComponentDropZone, renderComponents } from './ComponentPalette';
 import type { PageComponent } from './ComponentPalette';
 
@@ -45,22 +45,21 @@ function RouteNode({route,depth,selectedId,onSelect,onToggleAdd,onDelete,onRenam
 }
 
 /* ================= Route Config Panel ================= */
-function RouteConfig({route,tables,onSave,onClose}:{route:BuilderRoute;tables:string[];onSave:(id:number,data:Partial<BuilderRoute>)=>Promise<void>;onClose:()=>void}){
+function RouteConfig({route,tables,forms,views,onSave,onClose}:{route:BuilderRoute;tables:string[];forms:BuilderForm[];views:BuilderView[];onSave:(id:number,data:Partial<BuilderRoute>)=>Promise<void>;onClose:()=>void}){
   const [form,setForm] = useState({name:route.name,slug:route.slug,icon:route.icon||'',content_type:route.content_type,layout:route.layout,active:route.active,visible_in_menu:route.visible_in_menu,badge_color:route.badge_color||'',badge_label:route.badge_label||'',content_config:route.content_config||{}});
   const [components,setComponents] = useState<PageComponent[]>((route.content_config?.components as PageComponent[])||[]);
   const [busy,setBusy] = useState(false);
-  const [saved,setSaved] = useState(false);
   const [activeTab,setActiveTab] = useState<'config'|'components'>('config');
 
   function updateConfig(key:string,value:unknown){ setForm(f=>({...f,content_config:{...f.content_config,[key]:value}})); }
 
-  async function handleSave(){ setBusy(true); try{ await onSave(route.id,{...form,content_config:{...form.content_config,components}}); setSaved(true); setTimeout(()=>setSaved(false),1500); }finally{ setBusy(false); } }
+  async function handleSave(){ setBusy(true); try{ await onSave(route.id,{...form,content_config:{...form.content_config,components}}); onClose(); }finally{ setBusy(false); } }
 
   const contentTypes = [{v:'empty',l:'Vacía',icon:Layout},{v:'table',l:'Tabla CRUD',icon:Table2},{v:'form',l:'Formulario',icon:FormInput},{v:'chart',l:'Gráfica',icon:BarChart3},{v:'page',l:'Página custom',icon:FileText},{v:'redirect',l:'Redirect',icon:ArrowRight},{v:'divider',l:'Divisor',icon:Layout}];
   const layouts = [{v:'default',l:'Default'},{v:'sidebar',l:'Sidebar'},{v:'tabs',l:'Tabs'},{v:'fullwidth',l:'Full Width'},{v:'card',l:'Card'}];
 
   return <div className="route-config-panel">
-    <div className="rcp-header"><h3>Configurar: {route.name}</h3><button className="icon-button" onClick={onClose}><Trash2 size={16}/></button></div>
+    <div className="rcp-header"><h3>Configurar: {route.name}</h3><button className="icon-button" onClick={onClose} title="Cerrar"><X size={16}/></button></div>
 
     <div className="rcp-body">
       <div className="rcp-tabs">
@@ -81,28 +80,19 @@ function RouteConfig({route,tables,onSave,onClose}:{route:BuilderRoute;tables:st
       </div>
 
       {form.content_type==='table'&&<div className="rcp-config-section">
-        <label className="control"><span>Tabla</span><select value={(form.content_config.table_name as string)||''} onChange={e=>updateConfig('table_name',e.target.value)}>
-          <option value="">Seleccionar…</option>
-          {tables.map(t=><option key={t} value={t}>{t}</option>)}
+        <label className="control"><span>Vista de tabla creada</span><select value={String(form.content_config.view_id??'')} onChange={e=>updateConfig('view_id',Number(e.target.value)||null)}>
+          <option value="">Seleccionar vista…</option>
+          {views.map(view=><option key={view.id} value={view.id}>{view.name} · {view.view_key}</option>)}
         </select></label>
-        <label className="control"><span>Columnas visibles (separadas por coma)</span><input value={(form.content_config.visible_columns as string)||''} onChange={e=>updateConfig('visible_columns',e.target.value)} placeholder="*"/></label>
-        <label className="control"><span>Filtro por defecto</span><input value={(form.content_config.default_filter as string)||''} onChange={e=>updateConfig('default_filter',e.target.value)} placeholder="activo = 1"/></label>
-        <label className="control"><span>Orden por defecto</span><input value={(form.content_config.default_sort as string)||''} onChange={e=>updateConfig('default_sort',e.target.value)} placeholder="created_at desc"/></label>
-        <label className="check"><input type="checkbox" checked={!!form.content_config.allow_create} onChange={e=>updateConfig('allow_create',e.target.checked)}/><span>Permitir crear registros</span></label>
-        <label className="check"><input type="checkbox" checked={!!form.content_config.allow_edit} onChange={e=>updateConfig('allow_edit',e.target.checked)}/><span>Permitir editar registros</span></label>
-        <label className="check"><input type="checkbox" checked={!!form.content_config.allow_delete} onChange={e=>updateConfig('allow_delete',e.target.checked)}/><span>Permitir eliminar registros</span></label>
+        <p className="rcp-resource-note">Usará columnas, buscador, identificador y acciones configuradas en el creador de vistas.</p>
       </div>}
 
       {form.content_type==='form'&&<div className="rcp-config-section">
-        <label className="control"><span>Tabla destino</span><select value={(form.content_config.table_name as string)||''} onChange={e=>updateConfig('table_name',e.target.value)}>
-          <option value="">Seleccionar…</option>
-          {tables.map(t=><option key={t} value={t}>{t}</option>)}
+        <label className="control"><span>Formulario creado</span><select value={String(form.content_config.form_id??'')} onChange={e=>updateConfig('form_id',Number(e.target.value)||null)}>
+          <option value="">Seleccionar formulario…</option>
+          {forms.map(item=><option key={item.id} value={item.id}>{item.name} · {item.form_key}</option>)}
         </select></label>
-        <label className="control"><span>Campos visibles (separados por coma)</span><input value={(form.content_config.fields as string)||''} onChange={e=>updateConfig('fields',e.target.value)} placeholder="*"/></label>
-        <label className="control"><span>Layout</span><select value={(form.content_config.form_layout as string)||'vertical'} onChange={e=>updateConfig('form_layout',e.target.value)}>
-          <option value="vertical">Vertical</option><option value="horizontal">Horizontal</option><option value="grid">Grid 2 columnas</option>
-        </select></label>
-        <label className="check"><input type="checkbox" checked={!!form.content_config.show_success_page} onChange={e=>updateConfig('show_success_page',e.target.checked)}/><span>Mostrar página de éxito</span></label>
+        <p className="rcp-resource-note">Usará el grid, campos, relaciones y validaciones del formulario guardado.</p>
       </div>}
 
       {form.content_type==='chart'&&<div className="rcp-config-section">
@@ -133,20 +123,26 @@ function RouteConfig({route,tables,onSave,onClose}:{route:BuilderRoute;tables:st
       </>}
 
       {activeTab==='components'&&<div className="rcp-components-tab">
-        <ComponentDropZone components={components} tables={tables} onChange={setComponents}/>
+        <ComponentDropZone components={components} tables={tables} forms={forms} views={views} onChange={setComponents}/>
       </div>}
     </div>
 
     <div className="rcp-footer">
       <button className="button ghost" onClick={onClose}>Cancelar</button>
-      <button className="button primary" onClick={()=>void handleSave()} disabled={busy||saved}>{saved?<><Check size={15}/>Guardado</>:busy?<LoaderCircle className="spin" size={15}/>:<><Pencil size={15}/>Guardar</>}</button>
+      <button className="button primary" onClick={()=>void handleSave()} disabled={busy}>{busy?<LoaderCircle className="spin" size={15}/>:<><Check size={15}/>Guardar y cerrar</>}</button>
     </div>
   </div>;
 }
 
 /* ================= Project Preview ================= */
-function ProjectPreview({routes,paths}:{routes:BuilderRoute[];paths:Record<number,string>}){
+function ProjectPreview({routes,paths,forms,views}:{routes:BuilderRoute[];paths:Record<number,string>;forms:BuilderForm[];views:BuilderView[]}){
   const [activePath,setActivePath] = useState('/');
+
+  useEffect(()=>{
+    if(activePath!=='/'&&Object.values(paths).includes(activePath))return;
+    const first=findFirstVisibleRoute(routes);
+    if(first)setActivePath(paths[first.id]||'/');
+  },[routes,paths,activePath]);
 
   function buildNav(items:BuilderRoute[],depth=0):React.ReactNode{
     return <ul className="preview-nav-list" style={{paddingLeft:depth*16}}>
@@ -167,11 +163,11 @@ function ProjectPreview({routes,paths}:{routes:BuilderRoute[];paths:Record<numbe
     if(!route) return <div className="preview-empty"><Layout size={48}/><p>Selecciona una ruta del menú</p></div>;
 
     const comps = (route.content_config?.components as PageComponent[])||[];
-    if(comps.length>0) return <div className="preview-content"><h2>{route.name}</h2>{renderComponents(comps)}</div>;
+    if(comps.length>0) return <div className="preview-content"><h2>{route.name}</h2>{renderComponents(comps,forms,views)}</div>;
 
     switch(route.content_type){
-      case 'table': return <div className="preview-content"><h2>{route.name}</h2><p className="muted">Tabla: <code>{(route.content_config?.table_name as string)||'—'}</code></p><div className="preview-table-placeholder"><Table2 size={32}/><p>Vista previa de tabla CRUD</p></div></div>;
-      case 'form': return <div className="preview-content"><h2>{route.name}</h2><p className="muted">Formulario → <code>{(route.content_config?.table_name as string)||'—'}</code></p><div className="preview-form-placeholder"><FormInput size={32}/><p>Vista previa de formulario</p></div></div>;
+      case 'table': return <div className="preview-content"><h2>{route.name}</h2>{renderComponents([{id:`route-view-${route.id}`,type:'table',label:route.name,config:{view_id:route.content_config?.view_id,show_title:false}}],forms,views)}</div>;
+      case 'form': return <div className="preview-content"><h2>{route.name}</h2>{renderComponents([{id:`route-form-${route.id}`,type:'form',label:route.name,config:{form_id:route.content_config?.form_id,show_title:false}}],forms,views)}</div>;
       case 'chart': return <div className="preview-content"><h2>{route.name}</h2><p className="muted">Gráfica #{(route.content_config?.chart_id as string)||'—'}</p><div className="preview-chart-placeholder"><BarChart3 size={32}/><p>Vista previa de gráfica</p></div></div>;
       case 'page': return <div className="preview-content"><h2>{route.name}</h2><div className="preview-page-placeholder"><FileText size={32}/><p>Página personalizada</p></div></div>;
       case 'redirect': return <div className="preview-content"><h2>{route.name}</h2><p className="muted">Redirect → <code>{(route.content_config?.target_url as string)||'—'}</code></p></div>;
@@ -197,6 +193,8 @@ export default function ProjectBuilder(){
   const [flatRoutes,setFlatRoutes] = useState<BuilderRoute[]>([]);
   const [selected,setSelected] = useState<BuilderRoute|null>(null);
   const [tables,setTables] = useState<string[]>([]);
+  const [forms,setForms] = useState<BuilderForm[]>([]);
+  const [views,setViews] = useState<BuilderView[]>([]);
   const [showPreview,setShowPreview] = useState(false);
   const [busy,setBusy] = useState(false);
   const [showConfig,setShowConfig] = useState(false);
@@ -205,8 +203,8 @@ export default function ProjectBuilder(){
   const [newChildName,setNewChildName] = useState('');
 
   const load = useCallback(async()=>{
-    const [tree,flat,tbls] = await Promise.all([api.routes(),api.routesFlat(),api.schemaTables()]);
-    setRoutes(tree.routes); setFlatRoutes(flat.routes); setTables(tbls.tables.map(t=>t.name));
+    const [tree,flat,tbls,savedForms,savedViews] = await Promise.all([api.routes(),api.routesFlat(),api.schemaTables(),api.forms(),api.views()]);
+    setRoutes(tree.routes); setFlatRoutes(flat.routes); setTables(tbls.tables.map(t=>t.name)); setForms(savedForms); setViews(savedViews);
   },[]);
 
   useEffect(()=>{ void load(); },[load]);
@@ -252,9 +250,19 @@ export default function ProjectBuilder(){
       <div className="pb-stats"><span>{flatRoutes.length} rutas</span><span>·</span><span>{tables.length} tablas</span></div>
     </div>
     <div className="pb-right">
-      {showConfig&&selected?<RouteConfig route={selected} tables={tables} onSave={saveRoute} onClose={()=>{setShowConfig(false);setSelected(null);}}/>
-        :showPreview?<ProjectPreview routes={routes} paths={flatRoutes.reduce((acc,r)=>({...acc,[r.id]:`/${r.slug}`}),{} as Record<number,string>)}/>
+      {showConfig&&selected?<RouteConfig route={selected} tables={tables} forms={forms} views={views} onSave={saveRoute} onClose={()=>{setShowConfig(false);setSelected(null);}}/>
+        :showPreview?<ProjectPreview routes={routes} paths={buildRoutePaths(flatRoutes)} forms={forms} views={views}/>
         :<div className="pb-placeholder"><Layout size={48}/><h2>Constructor de Proyectos</h2><p>Selecciona una ruta del árbol para configurarla, o activa el preview para ver tu proyecto</p></div>}
     </div>
   </div>;
+}
+
+function buildRoutePaths(routes:BuilderRoute[]){
+  const byId=new Map(routes.map(route=>[route.id,route])); const paths:Record<number,string>={};
+  routes.forEach(route=>{const parts=[route.slug];let parent=route.parent_id?byId.get(route.parent_id):undefined;const visited=new Set<number>([route.id]);while(parent&&!visited.has(parent.id)){visited.add(parent.id);parts.unshift(parent.slug);parent=parent.parent_id?byId.get(parent.parent_id):undefined;}paths[route.id]=`/${parts.join('/')}`;});
+  return paths;
+}
+
+function findFirstVisibleRoute(routes:BuilderRoute[]):BuilderRoute|undefined{
+  for(const route of routes){if(route.active&&route.visible_in_menu)return route;const child=findFirstVisibleRoute(route.children??[]);if(child)return child;}
 }
