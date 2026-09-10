@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, LoaderCircle, Check, X, Monitor, Tablet, Smartphone, Layers } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, LoaderCircle, Check, X, Monitor, Tablet, Smartphone, Layers, Maximize2, Minimize2 } from 'lucide-react';
 import { api } from '../api/client';
 import type { BuilderForm, BuilderRoute, BuilderView } from '../types';
 import { ComponentPalette, ComponentDropZone, renderComponents } from './ComponentPalette';
@@ -151,8 +151,10 @@ function RouteDraftPreview({name,slug,contentType,contentConfig,components,forms
 }
 
 /* ================= Project Preview ================= */
-function ProjectPreview({routes,paths,forms,views}:{routes:BuilderRoute[];paths:Record<number,string>;forms:BuilderForm[];views:BuilderView[]}){
+function ProjectPreview({routes,paths,forms,views,onClose}:{routes:BuilderRoute[];paths:Record<number,string>;forms:BuilderForm[];views:BuilderView[];onClose:()=>void}){
   const [activePath,setActivePath] = useState('/');
+  const [device,setDevice]=useState<'desktop'|'tablet'|'mobile'>('desktop');
+  const [fullscreen,setFullscreen]=useState(false);
 
   useEffect(()=>{
     if(activePath!=='/'&&Object.values(paths).includes(activePath))return;
@@ -192,14 +194,15 @@ function ProjectPreview({routes,paths,forms,views}:{routes:BuilderRoute[];paths:
     }
   }
 
-  return <div className="project-preview">
-    <div className="preview-chrome">
+  return <div className={`project-preview ${fullscreen?'fullscreen':''}`}>
+    <div className="site-preview-toolbar"><div><span>Proyecto completo</span><strong>Previsualizador del sitio</strong><small>{Object.keys(paths).length} rutas conectadas</small></div><DeviceSelector value={device} onChange={setDevice}/><button className="icon-button" title={fullscreen?'Salir de pantalla completa':'Pantalla completa'} onClick={()=>setFullscreen(!fullscreen)}>{fullscreen?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button className="icon-button" title="Cerrar preview" onClick={onClose}><X size={15}/></button></div>
+    <div className={`site-preview-stage ${device}`}><div className="preview-chrome">
       <div className="preview-browser-bar"><span className="dot red"/><span className="dot yellow"/><span className="dot green"/><span className="preview-url">localhost:5173{activePath}</span></div>
       <div className="preview-body">
-        <div className="preview-sidebar">{buildNav(routes)}</div>
-        <div className="preview-main">{renderContent()}</div>
+        <div className="preview-sidebar"><div className="preview-site-brand"><span>N</span><div><strong>Mi proyecto</strong><small>Creado con NexoDB</small></div></div>{buildNav(routes)}</div>
+        <div className="preview-app"><header><div><span>Aplicación</span><strong>{activePath}</strong></div><i>LG</i></header><main className="preview-main">{renderContent()}</main></div>
       </div>
-    </div>
+    </div></div>
   </div>;
 }
 
@@ -266,7 +269,7 @@ export default function ProjectBuilder(){
       <div className="pb-stats"><span>{flatRoutes.length} rutas</span><span>·</span><span>{tables.length} tablas</span></div>
     </div>
     <div className="pb-right">
-      {showPreview?<ProjectPreview routes={routes} paths={buildRoutePaths(flatRoutes)} forms={forms} views={views}/>
+      {showPreview?<ProjectPreview routes={routes} paths={buildRoutePaths(flatRoutes)} forms={forms} views={views} onClose={()=>setShowPreview(false)}/>
         :showConfig&&selected?<RouteConfig key={selected.id} route={selected} tables={tables} forms={forms} views={views} onSave={saveRoute} onClose={()=>{setShowConfig(false);setSelected(null);}}/>
         :<div className="pb-placeholder"><Layout size={48}/><h2>Constructor de Proyectos</h2><p>Selecciona una ruta del árbol para configurarla, o activa el preview para ver tu proyecto</p></div>}
     </div>

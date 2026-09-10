@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { GripVertical, Plus, Trash2, Copy, ChevronDown, ChevronRight, Table2, FormInput, BarChart3, Type, Image, MousePointerClick, Minus, Code2, LayoutList, Columns3, Rows3, CreditCard, ListOrdered, FileText, Star, AlertTriangle, X, Layers, Search } from 'lucide-react';
 import { api } from '../api/client';
 import type { BuilderForm, BuilderFormField, BuilderView, BuilderViewColumn } from '../types';
@@ -9,6 +9,9 @@ export interface PageComponent {
   label: string;
   config: Record<string, unknown>;
 }
+
+type DropZoneProps = {components:PageComponent[];tables:string[];forms:BuilderForm[];views:BuilderView[];onChange:(comps:PageComponent[])=>void;depth?:number;label?:string;zoneId?:string;ancestorIds?:string[]};
+const CanvasMoveContext=createContext<null|{move:(componentId:string,targetZone:string,ancestorIds:string[])=>void}>(null);
 
 type TabConfig = {id:string;label:string;components:PageComponent[]};
 
@@ -67,12 +70,22 @@ export function ComponentPalette(){
 }
 
 /* ================= Drop Zone ================= */
-export function ComponentDropZone({components,tables,forms,views,onChange,depth=0,label='Canvas de la página'}:{components:PageComponent[];tables:string[];forms:BuilderForm[];views:BuilderView[];onChange:(comps:PageComponent[])=>void;depth?:number;label?:string}){
+export function ComponentDropZone(props:DropZoneProps){
+  const parentContext=useContext(CanvasMoveContext);
+  if(parentContext)return <ComponentDropZoneInner {...props}/>;
+  const move=(componentId:string,targetZone:string,ancestorIds:string[])=>{if(ancestorIds.includes(componentId))return;const moving=findComponent(props.components,componentId);if(!moving)return;props.onChange(insertIntoZone(removeComponent(props.components,componentId),targetZone,moving));};
+  return <CanvasMoveContext.Provider value={{move}}><ComponentDropZoneInner {...props} zoneId="root" ancestorIds={[]}/></CanvasMoveContext.Provider>;
+}
+
+function ComponentDropZoneInner({components,tables,forms,views,onChange,depth=0,label='Canvas de la página',zoneId='root',ancestorIds=[]}:DropZoneProps){
+  const canvas=useContext(CanvasMoveContext);
   const [dragOver,setDragOver] = useState(false);
   const [editingId,setEditingId] = useState<string|null>(null);
 
   function onDrop(e:React.DragEvent){
     e.preventDefault(); e.stopPropagation(); setDragOver(false);
+    const movingId=e.dataTransfer.getData('existing-component-id');
+    if(movingId){canvas?.move(movingId,zoneId,ancestorIds);e.dataTransfer.dropEffect='move';return;}
     const type = e.dataTransfer.getData('component-type');
     if(!type) return;
     const def = COMPONENT_DEFS.find(d=>d.type===type);
@@ -119,7 +132,7 @@ export function ComponentDropZone({components,tables,forms,views,onChange,depth=
         const Icon = def?.icon??FileText;
         const isEditing = editingId===comp.id;
         return <div key={comp.id} className={`cdz-comp ${isEditing?'editing':''}`}>
-          <div className="cdz-comp-header" onClick={()=>setEditingId(isEditing?null:comp.id)}>
+          <div className="cdz-comp-header" draggable onDragStart={e=>{e.stopPropagation();e.dataTransfer.setData('existing-component-id',comp.id);e.dataTransfer.effectAllowed='move';}} onClick={()=>setEditingId(isEditing?null:comp.id)}>
             <span className="cdz-drag-handle" onClick={e=>e.stopPropagation()}><GripVertical size={14}/></span>
             <div className="cdz-comp-icon" style={{background:def?.color+'15',color:def?.color}}><Icon size={14}/></div>
             <span className="cdz-comp-label">{comp.label}</span>
@@ -134,7 +147,7 @@ export function ComponentDropZone({components,tables,forms,views,onChange,depth=
           {isEditing&&<div className="cdz-comp-config">
             <ComponentEditor comp={comp} tables={tables} forms={forms} views={views} onUpdate={(patch)=>updateComp(comp.id,patch)} onUpdateConfig={(k,v)=>updateConfig(comp.id,k,v)}/>
           </div>}
-          {isEditing&&<NestedComponentCanvas comp={comp} tables={tables} forms={forms} views={views} depth={depth+1} onUpdateConfig={(key,value)=>updateConfig(comp.id,key,value)}/>}
+          {isEditing&&<NestedComponentCanvas comp={comp} tables={tables} forms={forms} views={views} depth={depth+1} ancestorIds={[...ancestorIds,comp.id]} onUpdateConfig={(key,value)=>updateConfig(comp.id,key,value)}/>}
         </div>;
       })}
     </div>
@@ -142,7 +155,7 @@ export function ComponentDropZone({components,tables,forms,views,onChange,depth=
   </div>;
 }
 
-function NestedComponentCanvas({comp,tables,forms,views,depth,onUpdateConfig}:{comp:PageComponent;tables:string[];forms:BuilderForm[];views:BuilderView[];depth:number;onUpdateConfig:(key:string,value:unknown)=>void}){
+function NestedComponentCanvas({comp,tables,forms,views,depth,ancestorIds,onUpdateConfig}:{comp:PageComponent;tables:string[];forms:BuilderForm[];views:BuilderView[];depth:number;ancestorIds:string[];onUpdateConfig:(key:string,value:unknown)=>void}){
   const [activeTab,setActiveTab]=useState(0);
   if(comp.type==='tabs'){
     const tabs=normalizeTabs(comp.config.tabs);
@@ -151,21 +164,48 @@ function NestedComponentCanvas({comp,tables,forms,views,depth,onUpdateConfig}:{c
     const updateTabs=(next:TabConfig[])=>onUpdateConfig('tabs',next);
     return <div className="nested-builder tabs-builder">
       <div className="nested-tabs-bar">{tabs.map((item,index)=><button key={item.id} className={index===active?'active':''} onClick={()=>setActiveTab(index)}>{item.label}<small>{item.components.length}</small></button>)}<button className="nested-add" title="Nueva pestaña" onClick={()=>{const next=[...tabs,{id:genId(),label:`Pestaña ${tabs.length+1}`,components:[]}];updateTabs(next);setActiveTab(next.length-1);}}><Plus size={13}/></button></div>
-      {tab&&<><div className="nested-tab-tools"><input aria-label="Nombre de la pestaña" value={tab.label} onChange={e=>updateTabs(tabs.map((item,index)=>index===active?{...item,label:e.target.value}:item))}/><button className="danger" disabled={tabs.length===1} onClick={()=>{updateTabs(tabs.filter((_,index)=>index!==active));setActiveTab(Math.max(0,active-1));}}><Trash2 size={13}/> Eliminar pestaña</button></div><ComponentDropZone components={tab.components} tables={tables} forms={forms} views={views} depth={depth} label={`Contenido de ${tab.label}`} onChange={children=>updateTabs(tabs.map((item,index)=>index===active?{...item,components:children}:item))}/></>}
+      {tab&&<><div className="nested-tab-tools"><input aria-label="Nombre de la pestaña" value={tab.label} onChange={e=>updateTabs(tabs.map((item,index)=>index===active?{...item,label:e.target.value}:item))}/><button className="danger" disabled={tabs.length===1} onClick={()=>{updateTabs(tabs.filter((_,index)=>index!==active));setActiveTab(Math.max(0,active-1));}}><Trash2 size={13}/> Eliminar pestaña</button></div><ComponentDropZone components={tab.components} tables={tables} forms={forms} views={views} depth={depth} zoneId={`tab:${comp.id}:${tab.id}`} ancestorIds={ancestorIds} label={`Contenido de ${tab.label}`} onChange={children=>updateTabs(tabs.map((item,index)=>index===active?{...item,components:children}:item))}/></>}
     </div>;
   }
   if(comp.type==='columns'){
     const count=Math.max(1,Math.min(4,Number(comp.config.columns)||2)); const existing=(comp.config.children as PageComponent[][]|undefined)??[]; const columns=Array.from({length:count},(_,index)=>existing[index]??[]);
-    return <div className="nested-builder columns-builder" style={{gridTemplateColumns:`repeat(${count},minmax(0,1fr))`,gap:Number(comp.config.gap)||12}}>{columns.map((children,index)=><ComponentDropZone key={index} components={children} tables={tables} forms={forms} views={views} depth={depth} label={`Columna ${index+1}`} onChange={next=>onUpdateConfig('children',columns.map((column,columnIndex)=>columnIndex===index?next:column))}/>)}</div>;
+    return <div className="nested-builder columns-builder" style={{gridTemplateColumns:`repeat(${count},minmax(0,1fr))`,gap:Number(comp.config.gap)||12}}>{columns.map((children,index)=><ComponentDropZone key={index} components={children} tables={tables} forms={forms} views={views} depth={depth} zoneId={`column:${comp.id}:${index}`} ancestorIds={ancestorIds} label={`Columna ${index+1}`} onChange={next=>onUpdateConfig('children',columns.map((column,columnIndex)=>columnIndex===index?next:column))}/>)}</div>;
   }
-  if(comp.type==='card')return <div className="nested-builder card-builder"><ComponentDropZone components={(comp.config.children as PageComponent[]|undefined)??[]} tables={tables} forms={forms} views={views} depth={depth} label="Contenido de la tarjeta" onChange={next=>onUpdateConfig('children',next)}/></div>;
-  if(comp.type==='button'&&comp.config.action==='modal')return <div className="nested-builder modal-builder"><div className="nested-builder-head"><span>Canvas del modal</span><small>Todo lo que arrastres aparecerá al abrir el botón</small></div><ComponentDropZone components={(comp.config.modal_components as PageComponent[]|undefined)??[]} tables={tables} forms={forms} views={views} depth={depth} label="Contenido del modal" onChange={next=>onUpdateConfig('modal_components',next)}/></div>;
+  if(comp.type==='card')return <div className="nested-builder card-builder"><ComponentDropZone components={(comp.config.children as PageComponent[]|undefined)??[]} tables={tables} forms={forms} views={views} depth={depth} zoneId={`card:${comp.id}`} ancestorIds={ancestorIds} label="Contenido de la tarjeta" onChange={next=>onUpdateConfig('children',next)}/></div>;
+  if(comp.type==='button'&&comp.config.action==='modal')return <div className="nested-builder modal-builder"><div className="nested-builder-head"><span>Canvas del modal</span><small>Todo lo que arrastres aparecerá al abrir el botón</small></div><ComponentDropZone components={(comp.config.modal_components as PageComponent[]|undefined)??[]} tables={tables} forms={forms} views={views} depth={depth} zoneId={`modal:${comp.id}`} ancestorIds={ancestorIds} label="Contenido del modal" onChange={next=>onUpdateConfig('modal_components',next)}/></div>;
   return null;
 }
 
 function normalizeTabs(value:unknown):TabConfig[]{
   if(!Array.isArray(value)||value.length===0)return [{id:'tab_1',label:'Pestaña 1',components:[]}];
   return value.map((raw,index)=>{const tab=raw as Record<string,unknown>;let components=Array.isArray(tab.components)?tab.components as PageComponent[]:[];if(!components.length&&tab.resource_id){const type=tab.content_type==='view'?'table':'form';components=[{id:`legacy_${index}_${tab.resource_id}`,type,label:type==='table'?'Vista creada':'Formulario creado',config:type==='table'?{view_id:tab.resource_id,show_title:true}:{form_id:tab.resource_id,show_title:true}}];}return{id:String(tab.id||`tab_${index+1}`),label:String(tab.label||`Pestaña ${index+1}`),components};});
+}
+
+function findComponent(components:PageComponent[],id:string):PageComponent|undefined{
+  for(const component of components){if(component.id===id)return component;for(const children of componentChildLists(component)){const found=findComponent(children,id);if(found)return found;}}
+}
+
+function removeComponent(components:PageComponent[],id:string):PageComponent[]{return components.filter(component=>component.id!==id).map(component=>mapChildLists(component,children=>removeComponent(children,id)));}
+
+function insertIntoZone(components:PageComponent[],zoneId:string,moving:PageComponent):PageComponent[]{
+  if(zoneId==='root')return[...components,moving];
+  return components.map(component=>{
+    if(zoneId===`card:${component.id}`)return{...component,config:{...component.config,children:[...((component.config.children as PageComponent[]|undefined)??[]),moving]}};
+    if(zoneId===`modal:${component.id}`)return{...component,config:{...component.config,modal_components:[...((component.config.modal_components as PageComponent[]|undefined)??[]),moving]}};
+    if(zoneId.startsWith(`column:${component.id}:`)){const index=Number(zoneId.split(':').at(-1));const count=Math.max(Number(component.config.columns)||2,index+1);const columns=Array.from({length:count},(_,columnIndex)=>((component.config.children as PageComponent[][]|undefined)??[])[columnIndex]??[]);columns[index]=[...columns[index],moving];return{...component,config:{...component.config,children:columns}};}
+    if(zoneId.startsWith(`tab:${component.id}:`)){const tabId=zoneId.split(':').at(-1);return{...component,config:{...component.config,tabs:normalizeTabs(component.config.tabs).map(tab=>tab.id===tabId?{...tab,components:[...tab.components,moving]}:tab)}};}
+    return mapChildLists(component,children=>insertIntoZone(children,zoneId,moving));
+  });
+}
+
+function componentChildLists(component:PageComponent):PageComponent[][]{if(component.type==='tabs')return normalizeTabs(component.config.tabs).map(tab=>tab.components);if(component.type==='columns')return(component.config.children as PageComponent[][]|undefined)??[];if(component.type==='card')return[(component.config.children as PageComponent[]|undefined)??[]];if(component.type==='button')return[(component.config.modal_components as PageComponent[]|undefined)??[]];return[];}
+
+function mapChildLists(component:PageComponent,map:(children:PageComponent[])=>PageComponent[]):PageComponent{
+  if(component.type==='tabs')return{...component,config:{...component.config,tabs:normalizeTabs(component.config.tabs).map(tab=>({...tab,components:map(tab.components)}))}};
+  if(component.type==='columns')return{...component,config:{...component.config,children:((component.config.children as PageComponent[][]|undefined)??[]).map(map)}};
+  if(component.type==='card')return{...component,config:{...component.config,children:map((component.config.children as PageComponent[]|undefined)??[])}};
+  if(component.type==='button')return{...component,config:{...component.config,modal_components:map((component.config.modal_components as PageComponent[]|undefined)??[])}};
+  return component;
 }
 
 /* ================= Component Editor ================= */
