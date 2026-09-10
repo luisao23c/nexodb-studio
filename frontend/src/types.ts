@@ -21,3 +21,11 @@ export interface Chart { id:number; name:string; table_name:string; chart_type:'
 export interface ChartData { chart:{id:number;name:string;chart_type:string;color:string}; data:{label:string;value:number}[]; }
 
 export interface CodePage { id:number; name:string; slug:string; description?:string|null; code:string; active:boolean; }
+
+export type FormFieldType = 'text'|'textarea'|'number'|'email'|'password'|'date'|'datetime'|'autocomplete'|'select'|'multiselect'|'checkbox'|'radio'|'switch'|'file'|'hidden'|'heading'|'divider'|'button';
+export interface BuilderFormField { id?:number; field_key:string; label:string; field_type:FormFieldType; source_column?:string|null; placeholder?:string|null; help_text?:string|null; default_value?:string|null; width:number; required:boolean; options?:string[]|null; config?:Record<string,unknown>|null; sort_order?:number; }
+export interface BuilderForm { id?:number; name:string; form_key:string; table_name:string; description?:string|null; layout_columns:number; submit_label:string; settings?:Record<string,unknown>|null; active:boolean; fields:BuilderFormField[]; }
+
+export type ViewDisplayType = 'text'|'number'|'money'|'date'|'datetime'|'badge'|'boolean'|'image'|'link'|'email'|'json';
+export interface BuilderViewColumn { id?:number; column_key:string; label:string; display_type:ViewDisplayType; width?:number|null; sortable:boolean; searchable:boolean; visible:boolean; config?:Record<string,unknown>|null; sort_order?:number; }
+export interface BuilderView { id?:number; name:string; view_key:string; table_name:string; description?:string|null; primary_key:string; default_sort_column?:string|null; default_sort_direction:'asc'|'desc'; per_page:number; settings?:Record<string,unknown>|null; active:boolean; columns:BuilderViewColumn[]; }

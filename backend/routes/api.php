@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\MenuController;
 use App\Http\Controllers\Api\PageController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SchemaExplorerController;
+use App\Http\Controllers\Api\InterfaceBuilderController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', fn () => ['ok' => true, 'name' => 'NexoDB Studio']);
@@ -75,4 +76,16 @@ Route::middleware(['builder.admin', 'throttle:api'])->prefix('builder')->group(f
     Route::get('/pages/{page}', [PageController::class, 'show']);
     Route::put('/pages/{page}', [PageController::class, 'update']);
     Route::delete('/pages/{page}', [PageController::class, 'destroy']);
+
+    // Reusable form and table-view designers
+    Route::get('/forms', [InterfaceBuilderController::class, 'forms']);
+    Route::get('/forms/key/{key}', [InterfaceBuilderController::class, 'formByKey'])->where('key', '[a-z0-9_.-]+');
+    Route::post('/forms', [InterfaceBuilderController::class, 'storeForm']);
+    Route::put('/forms/{form}', [InterfaceBuilderController::class, 'updateForm']);
+    Route::delete('/forms/{form}', [InterfaceBuilderController::class, 'destroyForm']);
+    Route::get('/views', [InterfaceBuilderController::class, 'views']);
+    Route::get('/views/key/{key}', [InterfaceBuilderController::class, 'viewByKey'])->where('key', '[a-z0-9_.-]+');
+    Route::post('/views', [InterfaceBuilderController::class, 'storeView']);
+    Route::put('/views/{view}', [InterfaceBuilderController::class, 'updateView']);
+    Route::delete('/views/{view}', [InterfaceBuilderController::class, 'destroyView']);
 });

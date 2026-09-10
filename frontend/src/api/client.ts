@@ -1,4 +1,4 @@
-import type { AuditEntry, BrowsePage, Chart, ChartData, CodePage, DashboardData, DbForeignKey, DbOverviewTable, Menu, MenuItem, RelationOption, Role, SchemaRelationModule, SchemaTable, SchemaTableDetail, SqlResult } from '../types';
+import type { AuditEntry, BrowsePage, BuilderForm, BuilderView, Chart, ChartData, CodePage, DashboardData, DbForeignKey, DbOverviewTable, Menu, MenuItem, RelationOption, Role, SchemaRelationModule, SchemaTable, SchemaTableDetail, SqlResult } from '../types';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 const KEY = import.meta.env.VITE_BUILDER_KEY || '';
@@ -106,4 +106,16 @@ export const api = {
   createPage: (data:Partial<CodePage>) => request<CodePage>('/builder/pages',{method:'POST',...json(data)}),
   updatePage: (id:number,data:Partial<CodePage>) => request<CodePage>(`/builder/pages/${id}`,{method:'PUT',...json(data)}),
   deletePage: (id:number) => request<void>(`/builder/pages/${id}`,{method:'DELETE'}),
+
+  // Reusable interfaces
+  forms: () => request<BuilderForm[]>('/builder/forms'),
+  formByKey: (key:string) => request<BuilderForm>(`/builder/forms/key/${encodeURIComponent(key)}`),
+  createForm: (data:BuilderForm) => request<BuilderForm>('/builder/forms',{method:'POST',...json(data)}),
+  updateForm: (id:number,data:BuilderForm) => request<BuilderForm>(`/builder/forms/${id}`,{method:'PUT',...json(data)}),
+  deleteForm: (id:number) => request<void>(`/builder/forms/${id}`,{method:'DELETE'}),
+  views: () => request<BuilderView[]>('/builder/views'),
+  viewByKey: (key:string) => request<BuilderView>(`/builder/views/key/${encodeURIComponent(key)}`),
+  createView: (data:BuilderView) => request<BuilderView>('/builder/views',{method:'POST',...json(data)}),
+  updateView: (id:number,data:BuilderView) => request<BuilderView>(`/builder/views/${id}`,{method:'PUT',...json(data)}),
+  deleteView: (id:number) => request<void>(`/builder/views/${id}`,{method:'DELETE'}),
 };
