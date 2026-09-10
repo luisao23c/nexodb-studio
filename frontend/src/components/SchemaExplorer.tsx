@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowRight, Braces, Calendar, Check, CheckCircle, ChevronLeft, ChevronRight, Clock, Code2, Database, Download, Eraser, GitBranch, Hash, Key, Link, LoaderCircle, Mail, Pencil, Phone, Play, Plus, RefreshCw, Search, Sigma, Sparkles, Table2, Text, Trash2, Unlink, Upload, User, X, History as HistoryIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Braces, Calendar, Check, CheckCircle, ChevronLeft, ChevronRight, CircleHelp, Clock, Code2, Database, Download, Eraser, Eye, GitBranch, Hash, Key, Link, ListChecks, LoaderCircle, Mail, Package, Pencil, Phone, Play, Plus, ReceiptText, RefreshCw, Search, Settings2, Sigma, Sparkles, Table2, Text, Trash2, Unlink, Upload, User, Users, X, History as HistoryIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { AuditTab, DbDashboard } from './DbDashboard';
 import type { DbOverviewTable, RelationOption, SchemaColumn, SchemaRelationModule, SchemaTable, SchemaTableDetail } from '../types';
@@ -446,6 +446,7 @@ function CreateTableModal({onClose,onCreated}:{onClose:()=>void;onCreated:(table
   const [refColsMap,setRefColsMap] = useState<Record<string,string[]>>({});
   const [expandedRow,setExpandedRow] = useState<number|null>(null);
   const [activeTab,setActiveTab] = useState<'columns'|'options'|'review'>('columns');
+  const [selectedTemplate,setSelectedTemplate] = useState('blank');
 
   useEffect(()=>{ api.schemaTables().then(r=>setTables(r.tables.map(t=>t.name))).catch(()=>{}); },[]);
 
@@ -479,6 +480,42 @@ function CreateTableModal({onClose,onCreated}:{onClose:()=>void;onCreated:(table
   function addQuickField(qf:typeof quickFields[0]){
     const defaults:ColDef = {...makeEmptyCol(),name:qf.type==='email'?'email':qf.type==='phone'?'telefono':qf.type==='url'?'url':qf.type==='enum'?'estado':qf.label.toLowerCase(),...qf.preset};
     setCols(v=>[...v,defaults]);
+  }
+
+  const tableTemplates:{id:string;label:string;description:string;name:string;icon:typeof Table2;columns:ColDef[]}[] = [
+    {id:'blank',label:'Desde cero',description:'Define cada campo a tu manera',name:'',icon:Plus,columns:[makeEmptyCol()]},
+    {id:'users',label:'Usuarios',description:'Nombre, correo, teléfono y estado',name:'usuarios',icon:Users,columns:[
+      {...makeEmptyCol(),name:'nombre',nullable:false},
+      {...makeEmptyCol(),name:'email',data_type:'email',nullable:false,unique:true},
+      {...makeEmptyCol(),name:'telefono',data_type:'phone',length:30},
+      {...makeEmptyCol(),name:'activo',data_type:'boolean',nullable:false,default_value:'1'},
+    ]},
+    {id:'products',label:'Productos',description:'Catálogo con precio y existencias',name:'productos',icon:Package,columns:[
+      {...makeEmptyCol(),name:'nombre',nullable:false},
+      {...makeEmptyCol(),name:'descripcion',data_type:'text'},
+      {...makeEmptyCol(),name:'precio',data_type:'decimal',nullable:false,default_value:'0.00'},
+      {...makeEmptyCol(),name:'existencias',data_type:'int',nullable:false,unsigned:true,default_value:'0'},
+      {...makeEmptyCol(),name:'activo',data_type:'boolean',nullable:false,default_value:'1'},
+    ]},
+    {id:'catalog',label:'Catálogo',description:'Clave, nombre y estado activo',name:'catalogos',icon:ListChecks,columns:[
+      {...makeEmptyCol(),name:'clave',nullable:false,unique:true,length:80},
+      {...makeEmptyCol(),name:'nombre',nullable:false},
+      {...makeEmptyCol(),name:'descripcion',data_type:'text'},
+      {...makeEmptyCol(),name:'activo',data_type:'boolean',nullable:false,default_value:'1'},
+    ]},
+    {id:'transactions',label:'Movimientos',description:'Concepto, importe, fecha y referencia',name:'movimientos',icon:ReceiptText,columns:[
+      {...makeEmptyCol(),name:'concepto',nullable:false},
+      {...makeEmptyCol(),name:'importe',data_type:'decimal',nullable:false,default_value:'0.00'},
+      {...makeEmptyCol(),name:'fecha',data_type:'date',nullable:false},
+      {...makeEmptyCol(),name:'referencia'},
+    ]},
+  ];
+
+  function applyTemplate(id:string){
+    const template=tableTemplates.find(item=>item.id===id);
+    if(!template)return;
+    setSelectedTemplate(id); setCols(template.columns.map(c=>({...c}))); setExpandedRow(null);
+    if(!name.trim()||tableTemplates.some(item=>item.name===name)) setName(template.name);
   }
 
   function generatePreview():string{
@@ -519,151 +556,80 @@ function CreateTableModal({onClose,onCreated}:{onClose:()=>void;onCreated:(table
   const groups = DDL_TYPES.reduce<Record<string,typeof DDL_TYPES>>((acc,t)=>{(acc[t.g]=acc[t.g]||[]).push(t);return acc;},{});
   const colCount = cols.filter(c=>c.name.trim()).length;
   const fkCount = cols.filter(c=>c.data_type==='relation'&&c.fk_table).length;
-  const isReady = Boolean(name.trim()&&colCount&&cols.filter(c=>c.name.trim()).every(c=>c.data_type!=='relation'||c.fk_table));
+  const usedNames = cols.filter(c=>c.name.trim()).map(c=>c.name.trim());
+  const hasDuplicates = new Set(usedNames).size!==usedNames.length;
+  const hasIncompleteFields = cols.some(c=>!c.name.trim()||(c.data_type==='relation'&&!c.fk_table)||(c.data_type==='enum'&&!c.enum_values.trim()));
+  const isReady = Boolean(name.trim()&&colCount&&!hasDuplicates&&!hasIncompleteFields);
 
-  return <ModalShell title="Crear una tabla" onClose={onClose} wide>
+  return <ModalShell title="Nueva tabla de base de datos" onClose={onClose} wide builder>
     <form className="modal-body create-table-flow" onSubmit={submit}>
-      <div className="ct-intro"><span className="ct-intro-icon"><Sparkles size={20}/></span><div><strong>Construye la estructura sin escribir SQL</strong><p>Empieza con los campos esenciales. Las opciones técnicas están disponibles en el siguiente paso.</p></div><span className="ct-safety"><CheckCircle size={14}/>Prefijo nx_ protegido</span></div>
+      <div className="ct-builder-layout">
+        <aside className="ct-flow-rail">
+          <div className="ct-flow-brand"><span><Sparkles size={19}/></span><div><strong>Constructor visual</strong><small>Sin escribir código SQL</small></div></div>
+          <nav aria-label="Pasos para crear la tabla">
+            <button type="button" className={activeTab==='columns'?'active':'done'} onClick={()=>setActiveTab('columns')}><span>{activeTab==='columns'?1:<Check size={14}/>}</span><div><b>Diseña los campos</b><small>Qué información guardarás</small></div></button>
+            <button type="button" className={activeTab==='options'?'active':activeTab==='review'?'done':''} onClick={()=>setActiveTab('options')}><span>{activeTab==='review'?<Check size={14}/>:2}</span><div><b>Configura la tabla</b><small>Seguridad y rendimiento</small></div></button>
+            <button type="button" className={activeTab==='review'?'active':''} onClick={()=>setActiveTab('review')}><span>3</span><div><b>Revisa y crea</b><small>Confirma el resultado</small></div></button>
+          </nav>
+          <div className="ct-live-summary"><span>Tu tabla</span><code>nx_{name||'sin_nombre'}</code><div><b>{colCount}</b><small>campos</small><b>{fkCount}</b><small>relaciones</small></div></div>
+          <div className="ct-flow-help"><CircleHelp size={16}/><p><b>¿Qué es una tabla?</b> Es el lugar donde guardarás un tipo de información, como clientes, productos o trámites.</p></div>
+        </aside>
 
-      <div className="ct-header">
-        <label className="control ct-name-control">
-          <span>¿Qué información guardarás?</span>
-          <div className="ct-name-wrap"><span>nx_</span><input autoFocus value={name} onChange={e=>setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''))} placeholder="clientes" required className="table-name-input"/></div>
-          <small>Usa un nombre plural y descriptivo, por ejemplo: productos, ordenes_compra.</small>
-        </label>
-      </div>
-
-      <div className="ct-steps">
-        <button type="button" className={activeTab==='columns'?'active':'done'} onClick={()=>setActiveTab('columns')}><span>{activeTab==='columns'?'1':<Check size={14}/>}</span><div><b>Campos</b><small>Define qué guardar</small></div></button>
-        <i/>
-        <button type="button" className={activeTab==='options'?'active':activeTab==='review'?'done':''} onClick={()=>setActiveTab('options')}><span>{activeTab==='review'?<Check size={14}/>:2}</span><div><b>Configuración</b><small>Ajustes opcionales</small></div></button>
-        <i/>
-        <button type="button" className={activeTab==='review'?'active':''} onClick={()=>setActiveTab('review')}><span>3</span><div><b>Revisión</b><small>Confirma y crea</small></div></button>
-      </div>
-
-      {activeTab==='columns'&&<>
-        <div className="ct-quick-bar">
-          <div className="ct-section-heading"><div><strong>Plantillas de campo</strong><small>Agrega configuraciones comunes con un clic</small></div></div>
-          {quickFields.map(qf=><button key={qf.label} type="button" className="ct-quick-btn" onClick={()=>addQuickField(qf)} title={qf.label}><qf.icon size={12}/>{qf.label}</button>)}
-        </div>
-
-        <div className="ct-section-heading"><div><strong>Campos de la tabla</strong><small>Cada fila representa una columna en MySQL</small></div><div className="ct-legend"><span><b>NN</b> Obligatorio</span><span><b>UQ</b> Sin duplicados</span><span><b>UN</b> Solo positivos</span></div></div>
-        <div className="ct-columns">
-          <div className="ct-col-labels"><span/><span/><b>Nombre del campo</b><b>Tipo de dato</b><b>Long.</b><b>Reglas</b><span/></div>
-          {cols.map((c,i)=>{
-            const typeDef = DDL_TYPES.find(t=>t.v===c.data_type);
-            const Icon = typeDef?.icon ?? Text;
-            const isExpanded = expandedRow===i;
-            const isFk = c.data_type==='relation';
-            return <div key={i} className={`ct-col-card ${isFk?'ct-col-fk':''}`}>
-              <div className="ct-col-row">
-                <div className="ct-col-drag">
-                  <button type="button" className="ct-drag-btn" onClick={()=>moveCol(i,-1)} disabled={i===0} title="Subir">▲</button>
-                  <button type="button" className="ct-drag-btn" onClick={()=>moveCol(i,1)} disabled={i===cols.length-1} title="Bajar">▼</button>
-                </div>
-                <div className="ct-col-icon" style={{background:typeDef?.color+'15',color:typeDef?.color}}><Icon size={15}/></div>
-                <input value={c.name} onChange={e=>updateCol(i,{name:e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,'')})} placeholder={isFk?'cliente_id':'nombre_campo'} className="ct-col-name" required aria-label={`Nombre del campo ${i+1}`}/>
-                <select value={c.data_type} onChange={e=>updateCol(i,{data_type:e.target.value})} className="ct-col-type">
-                  {Object.entries(groups).map(([g,items])=><optgroup key={g} label={g}>{items.map(t=><option key={t.v} value={t.v}>{t.l} — {t.desc}</option>)}</optgroup>)}
-                </select>
-                {['string','email','phone','url'].includes(c.data_type)&&<input type="number" value={c.length} min={1} max={65535} onChange={e=>updateCol(i,{length:Number(e.target.value)})} className="ct-col-len" title="Longitud"/>}
-                <div className="ct-col-toggles">
-                  <button type="button" className={`ct-toggle ${!c.nullable?'on':''}`} onClick={()=>updateCol(i,{nullable:!c.nullable})} title={c.nullable?'Nullable':'NOT NULL'}>{c.nullable?'N':'NN'}</button>
-                  <button type="button" className={`ct-toggle ${c.unique?'on':''}`} onClick={()=>updateCol(i,{unique:!c.unique})} title="Unique">UQ</button>
-                  {c.data_type==='integer'&&<button type="button" className={`ct-toggle ${c.unsigned?'on':''}`} onClick={()=>updateCol(i,{unsigned:!c.unsigned})} title="Unsigned">UN</button>}
-                </div>
-                <button type="button" className="ct-col-expand" onClick={()=>setExpandedRow(isExpanded?null:i)} title="Configuración avanzada"><Pencil size={13}/></button>
-                <button type="button" className="ct-col-del" onClick={()=>setCols(v=>v.filter((_,j)=>j!==i))} disabled={cols.length===1} title="Eliminar"><X size={14}/></button>
-              </div>
-
-              {isFk&&<div className="ct-col-fk-config">
-                <Link size={13} style={{color:'#4f46e5',flexShrink:0}}/>
-                <select value={c.fk_table} onChange={e=>updateCol(i,{fk_table:e.target.value,fk_column:'id'})} className="ct-fk-sel" required>
-                  <option value="">Seleccionar tabla…</option>
-                  {tables.filter(t=>t!==name).map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-                {c.fk_table&&<span className="ct-fk-arrow">→</span>}
-                {c.fk_table&&<select value={c.fk_column} onChange={e=>updateCol(i,{fk_column:e.target.value})} className="ct-fk-col-sel">
-                  {(refColsMap[c.fk_table]??['id']).map(col=><option key={col} value={col}>{col}</option>)}
-                </select>}
-                {c.fk_table&&<select value={c.fk_on_delete} onChange={e=>updateCol(i,{fk_on_delete:e.target.value})} className="ct-fk-action">
-                  <option value="SET NULL">ON DELETE SET NULL</option>
-                  <option value="CASCADE">ON DELETE CASCADE</option>
-                  <option value="RESTRICT">ON DELETE RESTRICT</option>
-                  <option value="NO ACTION">ON DELETE NO ACTION</option>
-                </select>}
-                {c.fk_table&&<span className="ct-fk-badge">FK</span>}
-              </div>}
-
-              {isExpanded&&!isFk&&<div className="ct-col-advanced">
-                <label className="control"><span>Default</span><input value={c.default_value} onChange={e=>updateCol(i,{default_value:e.target.value})} placeholder="NULL"/></label>
-                {c.data_type==='enum'&&<label className="control"><span>Valores (separados por coma)</span><input value={c.enum_values} onChange={e=>updateCol(i,{enum_values:e.target.value})} placeholder="activo,inactivo,pendiente" required/></label>}
-                <label className="control"><span>Comentario</span><input value={c.comment} onChange={e=>updateCol(i,{comment:e.target.value})} placeholder="Descripción de la columna"/></label>
-              </div>}
-            </div>;
-          })}
-          <button type="button" className="ct-add-col" onClick={()=>setCols(v=>[...v,makeEmptyCol()])}><Plus size={15}/>Agregar columna vacía</button>
-        </div>
-      </>}
-
-      {activeTab==='options'&&<><div className="ct-step-copy"><strong>Configuración de la tabla</strong><p>Los valores recomendados ya están seleccionados. Solo cámbialos si tu proyecto lo necesita.</p></div><div className="ct-options-panel">
-        <div className="ct-opt-group">
-          <h4><Calendar size={14}/>Timestamps</h4>
-          <label className="ct-opt-row"><input type="checkbox" checked={opts.timestamps} onChange={e=>setOpts({...opts,timestamps:e.target.checked})}/><div><b>created_at / updated_at</b><small>Columnas de auditoría automática</small></div></label>
-          <label className="ct-opt-row"><input type="checkbox" checked={opts.softDeletes} onChange={e=>setOpts({...opts,softDeletes:e.target.checked})}/><div><b>deleted_at</b><small>Soft delete (no elimina registros físicamente)</small></div></label>
-        </div>
-        <div className="ct-opt-group">
-          <h4><Key size={14}/>Primary Key</h4>
-          <label className="ct-opt-row"><input type="checkbox" checked={opts.uuidPk} onChange={e=>setOpts({...opts,uuidPk:e.target.checked})}/><div><b>UUID como PK</b><small>En vez de auto-incremental, usa CHAR(36)</small></div></label>
-        </div>
-        <div className="ct-opt-group">
-          <h4><Database size={14}/>Motor y Charset</h4>
-          <div className="form-grid three">
-            <label className="control"><span>Motor</span><select value={opts.engine} onChange={e=>setOpts({...opts,engine:e.target.value})}><option>InnoDB</option><option>MyISAM</option></select></label>
-            <label className="control"><span>Charset</span><select value={opts.charset} onChange={e=>setOpts({...opts,charset:e.target.value})}><option>utf8mb4</option><option>utf8</option><option>latin1</option><option>ascii</option></select></label>
-            <label className="control"><span>Collation</span><select value={opts.collation} onChange={e=>setOpts({...opts,collation:e.target.value})}><option>utf8mb4_unicode_ci</option><option>utf8mb4_general_ci</option><option>utf8mb4_bin</option><option>utf8_general_ci</option></select></label>
+        <main className="ct-flow-main">
+          <div className="ct-header">
+            <div className="ct-title-row"><div><span className="ct-stage-label">Paso {activeTab==='columns'?1:activeTab==='options'?2:3} de 3</span><h3>{activeTab==='columns'?'Diseña tu tabla':activeTab==='options'?'Configura su comportamiento':'Todo listo para crear'}</h3><p>{activeTab==='columns'?'Elige una plantilla y adapta sus campos.':activeTab==='options'?'Dejamos seleccionada la configuración recomendada.':'Comprueba el resultado antes de guardarlo en MySQL.'}</p></div><span className="ct-safety"><CheckCircle size={14}/>Solo tablas nx_</span></div>
+            <label className="control ct-name-control"><span>Nombre de la tabla</span><div className="ct-name-wrap"><span>nx_</span><input autoFocus value={name} onChange={e=>setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''))} placeholder="clientes" required className="table-name-input"/></div><small>Sin espacios ni acentos. Ejemplo: ordenes_compra.</small></label>
           </div>
-        </div>
-        <div className="ct-opt-group">
-          <h4><Table2 size={14}/>Resumen</h4>
-          <div className="ct-summary">
-            <div className="ct-sum-item"><span className="ct-sum-num">{colCount}</span><span>Columnas</span></div>
-            <div className="ct-sum-item"><span className="ct-sum-num">{fkCount}</span><span>Foreign Keys</span></div>
-            <div className="ct-sum-item"><span className="ct-sum-num">{opts.timestamps?2:0}</span><span>Timestamps</span></div>
-            <div className="ct-sum-item"><span className="ct-sum-num">{opts.softDeletes?1:0}</span><span>Soft Delete</span></div>
-          </div>
-        </div>
-      </div></>}
 
-      {activeTab==='review'&&<div className="ct-review">
-        <div className="ct-review-card"><span className="ct-review-icon"><Table2 size={20}/></span><div><span>Se creará</span><strong>nx_{name||'nombre_tabla'}</strong><small>{colCount} campos personalizados · {opts.uuidPk?'UUID':'ID autoincremental'} · {opts.engine}</small></div><span className={`ct-ready ${isReady?'ok':''}`}>{isReady?<><CheckCircle size={14}/>Lista para crear</>:<><AlertTriangle size={14}/>Faltan datos</>}</span></div>
-        <div className="ct-review-grid">
-          <div><span>Campos</span><b>{colCount}</b><small>{fkCount} relaciones</small></div>
-          <div><span>Auditoría</span><b>{opts.timestamps?'Activada':'Desactivada'}</b><small>created_at y updated_at</small></div>
-          <div><span>Borrado seguro</span><b>{opts.softDeletes?'Activado':'Desactivado'}</b><small>Columna deleted_at</small></div>
-        </div>
-        <details className="ct-sql-preview"><summary><Code2 size={14}/><strong>Ver SQL que se ejecutará</strong><small>Para usuarios avanzados</small></summary><div className="ct-sql-header"><span>Vista previa de solo lectura</span><button type="button" className="button ghost" onClick={()=>navigator.clipboard.writeText(generatePreview())}>Copiar SQL</button></div><pre><code>{generatePreview()}</code></pre></details>
-      </div>}
+          <div className="ct-stage-content">
+          {activeTab==='columns'&&<>
+            <section className="ct-template-section"><div className="ct-section-heading"><div><strong>1. Elige un punto de partida</strong><small>Puedes modificar todos los campos después</small></div></div><div className="ct-template-grid">{tableTemplates.map(template=>{const Icon=template.icon;return <button type="button" key={template.id} className={selectedTemplate===template.id?'active':''} onClick={()=>applyTemplate(template.id)}><span><Icon size={18}/></span><div><b>{template.label}</b><small>{template.description}</small></div>{selectedTemplate===template.id&&<CheckCircle size={16} className="template-check"/>}</button>;})}</div></section>
+
+            <section className="ct-fields-section"><div className="ct-section-heading"><div><strong>2. Personaliza los campos</strong><small>El ID se agrega automáticamente como llave principal</small></div><span className="ct-field-count">{colCount} campos</span></div>
+              <div className="ct-system-field"><span><Key size={15}/></span><div><b>id</b><small>Identificador único · creado automáticamente</small></div><em>Llave principal</em></div>
+              <div className="ct-columns">{cols.map((c,i)=>{
+                const typeDef=DDL_TYPES.find(t=>t.v===c.data_type); const Icon=typeDef?.icon??Text; const isExpanded=expandedRow===i; const isFk=c.data_type==='relation';
+                return <article key={i} className={`ct-field-card ${isFk?'relation':''} ${!c.name.trim()?'invalid':''}`}>
+                  <div className="ct-field-number">{i+1}</div><div className="ct-field-icon" style={{background:typeDef?.color+'16',color:typeDef?.color}}><Icon size={17}/></div>
+                  <label><span>Nombre del campo</span><input value={c.name} onChange={e=>updateCol(i,{name:e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,'')})} placeholder={isFk?'cliente_id':'nombre_campo'} required aria-label={`Nombre del campo ${i+1}`}/></label>
+                  <label><span>Tipo de información</span><select value={c.data_type} onChange={e=>updateCol(i,{data_type:e.target.value})}>{Object.entries(groups).map(([g,items])=><optgroup key={g} label={g}>{items.map(t=><option key={t.v} value={t.v}>{t.l} — {t.desc}</option>)}</optgroup>)}</select></label>
+                  <div className="ct-field-actions"><button type="button" onClick={()=>moveCol(i,-1)} disabled={i===0} title="Subir campo">↑</button><button type="button" onClick={()=>moveCol(i,1)} disabled={i===cols.length-1} title="Bajar campo">↓</button><button type="button" className="danger" onClick={()=>setCols(v=>v.filter((_,j)=>j!==i))} disabled={cols.length===1} title="Eliminar campo"><Trash2 size={14}/></button></div>
+                  <div className="ct-field-rules"><label><input type="checkbox" checked={!c.nullable} onChange={e=>updateCol(i,{nullable:!e.target.checked})}/><span>Obligatorio</span></label><label><input type="checkbox" checked={c.unique} onChange={e=>updateCol(i,{unique:e.target.checked})}/><span>Sin duplicados</span></label>{['integer','int','smallint'].includes(c.data_type)&&<label><input type="checkbox" checked={c.unsigned} onChange={e=>updateCol(i,{unsigned:e.target.checked})}/><span>Solo positivos</span></label>}{!isFk&&<button type="button" className={isExpanded?'active':''} onClick={()=>setExpandedRow(isExpanded?null:i)}><Settings2 size={13}/>Más opciones</button>}</div>
+                  {isFk&&<div className="ct-relation-config"><div><Link size={15}/><span><b>Conectar con otra tabla</b><small>Este campo guardará el ID de un registro relacionado</small></span></div><label><span>Tabla relacionada</span><select value={c.fk_table} onChange={e=>updateCol(i,{fk_table:e.target.value,fk_column:'id'})} required><option value="">Selecciona una tabla…</option>{tables.filter(t=>t!==`nx_${name}`).map(t=><option key={t} value={t}>{t}</option>)}</select></label>{c.fk_table&&<label><span>Campo relacionado</span><select value={c.fk_column} onChange={e=>updateCol(i,{fk_column:e.target.value})}>{(refColsMap[c.fk_table]??['id']).map(col=><option key={col} value={col}>{col}</option>)}</select></label>}{c.fk_table&&<label><span>Si se elimina</span><select value={c.fk_on_delete} onChange={e=>updateCol(i,{fk_on_delete:e.target.value})}><option value="SET NULL">Conservar y dejar vacío</option><option value="CASCADE">Eliminar también</option><option value="RESTRICT">Impedir eliminación</option><option value="NO ACTION">No hacer nada</option></select></label>}</div>}
+                  {isExpanded&&!isFk&&<div className="ct-field-advanced">{['string','email','phone','url'].includes(c.data_type)&&<label><span>Longitud máxima</span><input type="number" value={c.length} min={1} max={65535} onChange={e=>updateCol(i,{length:Number(e.target.value)})}/></label>}<label><span>Valor inicial</span><input value={c.default_value} onChange={e=>updateCol(i,{default_value:e.target.value})} placeholder="Sin valor inicial"/></label>{c.data_type==='enum'&&<label><span>Opciones permitidas</span><input value={c.enum_values} onChange={e=>updateCol(i,{enum_values:e.target.value})} placeholder="activo,inactivo,pendiente" required/></label>}<label className="grow"><span>Descripción interna</span><input value={c.comment} onChange={e=>updateCol(i,{comment:e.target.value})} placeholder="¿Para qué sirve este campo?"/></label></div>}
+                </article>;
+              })}</div>
+              {(hasDuplicates||hasIncompleteFields)&&<div className="ct-validation-warning"><AlertTriangle size={15}/>{hasDuplicates?'Hay campos con el mismo nombre. Cada nombre debe ser único.':'Completa el nombre y la configuración de todos los campos.'}</div>}
+              <div className="ct-field-shortcuts"><span>Agregar campo común:</span>{quickFields.map(qf=><button key={qf.label} type="button" onClick={()=>addQuickField(qf)}><qf.icon size={13}/>{qf.label}</button>)}</div>
+              <button type="button" className="ct-add-col" onClick={()=>{setCols(v=>[...v,makeEmptyCol()]);setSelectedTemplate('blank');}}><Plus size={15}/>Agregar campo personalizado</button>
+            </section>
+          </>}
+
+          {activeTab==='options'&&<div className="ct-options-panel">
+            <div className="ct-opt-group recommended"><div className="ct-opt-title"><span><Sparkles size={15}/></span><div><h4>Configuración recomendada</h4><p>Adecuada para la mayoría de sistemas Laravel.</p></div><em>Recomendado</em></div><label className="ct-opt-row"><input type="checkbox" checked={opts.timestamps} onChange={e=>setOpts({...opts,timestamps:e.target.checked})}/><div><b>Registrar creación y modificación</b><small>Agrega created_at y updated_at automáticamente.</small></div></label><label className="ct-opt-row"><input type="checkbox" checked={opts.softDeletes} onChange={e=>setOpts({...opts,softDeletes:e.target.checked})}/><div><b>Borrado recuperable</b><small>Los registros eliminados pueden recuperarse mediante deleted_at.</small></div></label></div>
+            <div className="ct-opt-group"><div className="ct-opt-title"><span><Key size={15}/></span><div><h4>Identificador principal</h4><p>Cómo se reconocerá cada registro.</p></div></div><div className="ct-choice-grid"><button type="button" className={!opts.uuidPk?'active':''} onClick={()=>setOpts({...opts,uuidPk:false})}><b>Número automático</b><small>1, 2, 3… Simple y rápido</small></button><button type="button" className={opts.uuidPk?'active':''} onClick={()=>setOpts({...opts,uuidPk:true})}><b>UUID</b><small>Identificador largo y difícil de adivinar</small></button></div></div>
+            <details className="ct-technical-options"><summary><Settings2 size={15}/><div><b>Opciones técnicas de MySQL</b><small>No necesitas cambiarlas normalmente</small></div><ChevronRight size={15}/></summary><div className="form-grid three"><label className="control"><span>Motor</span><select value={opts.engine} onChange={e=>setOpts({...opts,engine:e.target.value})}><option>InnoDB</option><option>MyISAM</option></select></label><label className="control"><span>Codificación</span><select value={opts.charset} onChange={e=>setOpts({...opts,charset:e.target.value})}><option>utf8mb4</option><option>utf8</option><option>latin1</option><option>ascii</option></select></label><label className="control"><span>Collation</span><select value={opts.collation} onChange={e=>setOpts({...opts,collation:e.target.value})}><option>utf8mb4_unicode_ci</option><option>utf8mb4_general_ci</option><option>utf8mb4_bin</option><option>utf8_general_ci</option></select></label></div></details>
+          </div>}
+
+          {activeTab==='review'&&<div className="ct-review"><div className="ct-review-card"><span className="ct-review-icon"><Table2 size={20}/></span><div><span>Tabla nueva</span><strong>nx_{name||'nombre_tabla'}</strong><small>{colCount} campos · {opts.uuidPk?'UUID':'ID numérico'} · {opts.engine}</small></div><span className={`ct-ready ${isReady?'ok':''}`}>{isReady?<><CheckCircle size={14}/>Lista para crear</>:<><AlertTriangle size={14}/>Revisa los datos</>}</span></div>
+            <div className="ct-review-columns"><div className="ct-review-system"><Key size={14}/><b>id</b><span>{opts.uuidPk?'UUID':'Número automático'}</span><em>Llave principal</em></div>{cols.filter(c=>c.name.trim()).map((c,i)=>{const type=DDL_TYPES.find(t=>t.v===c.data_type);const Icon=type?.icon??Text;return <div key={`${c.name}-${i}`}><Icon size={14}/><b>{c.name}</b><span>{type?.l??c.data_type}</span><em>{c.data_type==='relation'?`Relaciona con ${c.fk_table||'sin definir'}`:!c.nullable?'Obligatorio':'Opcional'}{c.unique?' · único':''}</em></div>;})}{opts.timestamps&&<div className="ct-review-system"><Clock size={14}/><b>created_at / updated_at</b><span>Fecha y hora</span><em>Automáticos</em></div>}</div>
+            {!isReady&&<div className="ct-validation-warning"><AlertTriangle size={15}/>{!name.trim()?'Escribe el nombre de la tabla.':hasDuplicates?'Corrige los nombres duplicados.':'Completa todos los campos y relaciones.'}</div>}
+            <details className="ct-sql-preview"><summary><Eye size={14}/><strong>Ver SQL que se ejecutará</strong><small>Vista técnica opcional</small></summary><div className="ct-sql-header"><span>Vista previa de solo lectura</span><button type="button" className="button ghost" onClick={()=>navigator.clipboard.writeText(generatePreview())}>Copiar SQL</button></div><pre><code>{generatePreview()}</code></pre></details>
+          </div>}
+          </div>
+        </main>
+      </div>
 
       {error&&<p className="error-box">{error}</p>}
-      <div className="modal-actions">
-        <div className="ct-final-summary">
-          <span>Paso {activeTab==='columns'?1:activeTab==='options'?2:3} de 3</span>
-          <small>{activeTab==='columns'?'Define los campos principales':activeTab==='options'?'Revisa los ajustes técnicos':'Confirma antes de crear'}</small>
-        </div>
-        <div className="modal-actions-right">
-          {activeTab==='columns'?<button type="button" className="button ghost" onClick={onClose}>Cancelar</button>:<button type="button" className="button ghost" onClick={()=>setActiveTab(activeTab==='review'?'options':'columns')}><ChevronLeft size={15}/>Anterior</button>}
-          {activeTab!=='review'?<button type="button" className="button primary" disabled={!name.trim()||!colCount} onClick={()=>setActiveTab(activeTab==='columns'?'options':'review')}>Continuar<ArrowRight size={15}/></button>:<button className="button primary" disabled={busy||!isReady}>{busy?<LoaderCircle className="spin" size={15}/>:<CheckCircle size={15}/>}Crear tabla</button>}
-        </div>
-      </div>
+      <div className="modal-actions ct-flow-footer"><button type="button" className="button ghost" onClick={onClose}>Cancelar</button><div className="modal-actions-right">{activeTab!=='columns'&&<button type="button" className="button ghost" onClick={()=>setActiveTab(activeTab==='review'?'options':'columns')}><ChevronLeft size={15}/>Anterior</button>}{activeTab!=='review'?<button type="button" className="button primary" disabled={!name.trim()||!colCount||hasDuplicates||hasIncompleteFields} onClick={()=>setActiveTab(activeTab==='columns'?'options':'review')}>Continuar<ArrowRight size={15}/></button>:<button className="button primary" disabled={busy||!isReady}>{busy?<LoaderCircle className="spin" size={15}/>:<CheckCircle size={15}/>}Crear tabla ahora</button>}</div></div>
     </form>
   </ModalShell>;
 }
 
-function ModalShell({title,children,onClose,wide=false}:{title:string;children:React.ReactNode;onClose:()=>void;wide?:boolean}){
+function ModalShell({title,children,onClose,wide=false,builder=false}:{title:string;children:React.ReactNode;onClose:()=>void;wide?:boolean;builder?:boolean}){
   useEffect(()=>{ const handler=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();}; document.addEventListener('keydown',handler); return()=>document.removeEventListener('keydown',handler); },[onClose]);
   return <div className="modal-backdrop" role="presentation" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
-    <section className={`modal ${wide?'modal-wide':''}`} role="dialog" aria-modal="true" aria-label={title}>
+    <section className={`modal ${wide?'modal-wide':''} ${builder?'modal-builder':''}`} role="dialog" aria-modal="true" aria-label={title}>
       <header><div><span className="kicker">NexoDB Studio</span><h2>{title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={20}/></button></header>
       {children}
     </section>
