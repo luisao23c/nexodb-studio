@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, GripVertical, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, Columns3, Rows3, Maximize2, CreditCard, LoaderCircle, Copy, Check, X } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, LoaderCircle, Check, X, Monitor, Tablet, Smartphone, Layers } from 'lucide-react';
 import { api } from '../api/client';
 import type { BuilderForm, BuilderRoute, BuilderView } from '../types';
 import { ComponentPalette, ComponentDropZone, renderComponents } from './ComponentPalette';
@@ -49,7 +49,8 @@ function RouteConfig({route,tables,forms,views,onSave,onClose}:{route:BuilderRou
   const [form,setForm] = useState({name:route.name,slug:route.slug,icon:route.icon||'',content_type:route.content_type,layout:route.layout,active:route.active,visible_in_menu:route.visible_in_menu,badge_color:route.badge_color||'',badge_label:route.badge_label||'',content_config:route.content_config||{}});
   const [components,setComponents] = useState<PageComponent[]>((route.content_config?.components as PageComponent[])||[]);
   const [busy,setBusy] = useState(false);
-  const [activeTab,setActiveTab] = useState<'config'|'components'>('config');
+  const [activeTab,setActiveTab] = useState<'config'|'build'|'preview'>('build');
+  const [device,setDevice] = useState<'desktop'|'tablet'|'mobile'>('desktop');
 
   function updateConfig(key:string,value:unknown){ setForm(f=>({...f,content_config:{...f.content_config,[key]:value}})); }
 
@@ -59,12 +60,13 @@ function RouteConfig({route,tables,forms,views,onSave,onClose}:{route:BuilderRou
   const layouts = [{v:'default',l:'Default'},{v:'sidebar',l:'Sidebar'},{v:'tabs',l:'Tabs'},{v:'fullwidth',l:'Full Width'},{v:'card',l:'Card'}];
 
   return <div className="route-config-panel">
-    <div className="rcp-header"><h3>Configurar: {route.name}</h3><button className="icon-button" onClick={onClose} title="Cerrar"><X size={16}/></button></div>
+    <div className="rcp-header"><div><span>Editor de ruta</span><h3>{route.name}</h3><small>/{form.slug}</small></div><button className="icon-button" onClick={onClose} title="Cerrar"><X size={16}/></button></div>
 
     <div className="rcp-body">
       <div className="rcp-tabs">
         <button className={`rcp-tab ${activeTab==='config'?'active':''}`} onClick={()=>setActiveTab('config')}>Configuración</button>
-        <button className={`rcp-tab ${activeTab==='components'?'active':''}`} onClick={()=>setActiveTab('components')}>Componentes <span className="rcp-tab-count">{components.length}</span></button>
+        <button className={`rcp-tab ${activeTab==='build'?'active':''}`} onClick={()=>setActiveTab('build')}>Constructor <span className="rcp-tab-count">{countComponents(components)}</span></button>
+        <button className={`rcp-tab ${activeTab==='preview'?'active':''}`} onClick={()=>setActiveTab('preview')}><Eye size={13}/> Vista previa</button>
       </div>
 
       {activeTab==='config'&&<>
@@ -122,9 +124,12 @@ function RouteConfig({route,tables,forms,views,onSave,onClose}:{route:BuilderRou
       </div>
       </>}
 
-      {activeTab==='components'&&<div className="rcp-components-tab">
-        <ComponentDropZone components={components} tables={tables} forms={forms} views={views} onChange={setComponents}/>
+      {activeTab==='build'&&<div className="rcp-builder-workspace">
+        <div className="rcp-workspace-bar"><div><Layers size={15}/><span>Canvas de {form.name}</span><small>Arrastra, configura y anida componentes</small></div><DeviceSelector value={device} onChange={setDevice}/></div>
+        <div className="rcp-builder-grid"><div className="rcp-canvas-pane"><ComponentDropZone components={components} tables={tables} forms={forms} views={views} onChange={setComponents}/></div><div className="rcp-live-pane"><span className="rcp-pane-label"><Eye size={12}/> Resultado en tiempo real</span><RouteDraftPreview name={form.name} slug={form.slug} contentType={form.content_type} contentConfig={form.content_config} components={components} forms={forms} views={views} device={device}/></div></div>
       </div>}
+
+      {activeTab==='preview'&&<div className="rcp-full-preview"><div className="rcp-preview-toolbar"><div><strong>Vista previa de la ruta</strong><small>Así se verá dentro del proyecto</small></div><DeviceSelector value={device} onChange={setDevice}/></div><RouteDraftPreview name={form.name} slug={form.slug} contentType={form.content_type} contentConfig={form.content_config} components={components} forms={forms} views={views} device={device}/></div>}
     </div>
 
     <div className="rcp-footer">
@@ -132,6 +137,17 @@ function RouteConfig({route,tables,forms,views,onSave,onClose}:{route:BuilderRou
       <button className="button primary" onClick={()=>void handleSave()} disabled={busy}>{busy?<LoaderCircle className="spin" size={15}/>:<><Check size={15}/>Guardar y cerrar</>}</button>
     </div>
   </div>;
+}
+
+function DeviceSelector({value,onChange}:{value:'desktop'|'tablet'|'mobile';onChange:(value:'desktop'|'tablet'|'mobile')=>void}){return <div className="device-selector"><button className={value==='desktop'?'active':''} title="Escritorio" onClick={()=>onChange('desktop')}><Monitor size={14}/></button><button className={value==='tablet'?'active':''} title="Tablet" onClick={()=>onChange('tablet')}><Tablet size={14}/></button><button className={value==='mobile'?'active':''} title="Móvil" onClick={()=>onChange('mobile')}><Smartphone size={14}/></button></div>}
+
+function RouteDraftPreview({name,slug,contentType,contentConfig,components,forms,views,device}:{name:string;slug:string;contentType:BuilderRoute['content_type'];contentConfig:Record<string,unknown>;components:PageComponent[];forms:BuilderForm[];views:BuilderView[];device:'desktop'|'tablet'|'mobile'}){
+  let content:React.ReactNode;
+  if(components.length)content=renderComponents(components,forms,views);
+  else if(contentType==='form')content=renderComponents([{id:'draft-form',type:'form',label:name,config:{form_id:contentConfig.form_id,show_title:false}}],forms,views);
+  else if(contentType==='table')content=renderComponents([{id:'draft-view',type:'table',label:name,config:{view_id:contentConfig.view_id,show_title:false}}],forms,views);
+  else content=<div className="draft-preview-empty"><Layout size={28}/><strong>Canvas vacío</strong><span>Arrastra componentes desde la paleta para comenzar</span></div>;
+  return <div className={`route-device-stage ${device}`}><div className="route-device-frame"><div className="route-device-bar"><i/><i/><i/><span>proyecto.local/{slug}</span></div><div className="route-device-content"><div className="route-preview-title"><span>Vista de proyecto</span><h2>{name}</h2></div>{content}</div></div></div>;
 }
 
 /* ================= Project Preview ================= */
@@ -231,9 +247,9 @@ export default function ProjectBuilder(){
   return <div className="project-builder">
     <div className="pb-left">
       <div className="pb-header">
-        <h2>Constructor de Proyectos</h2>
+        <div><span>Arquitectura visual</span><h2>Constructor de Proyectos</h2></div>
         <div className="pb-header-actions">
-          <button className="icon-button" title="Preview" onClick={()=>setShowPreview(!showPreview)}>{showPreview?<EyeOff size={16}/>:<Eye size={16}/>}</button>
+          <button className={`pb-preview-button ${showPreview?'active':''}`} title="Vista previa del proyecto" onClick={()=>setShowPreview(!showPreview)}>{showPreview?<EyeOff size={15}/>:<Eye size={15}/>}<span>{showPreview?'Volver':'Previsualizar'}</span></button>
         </div>
       </div>
       <div className="pb-new-route">
@@ -242,7 +258,7 @@ export default function ProjectBuilder(){
       </div>
       <div className="pb-tree">
         {routes.length===0&&!newRouteName&&<div className="pb-empty"><Layout size={40}/><p>No hay rutas creadas</p><small>Escribe un nombre y presiona Enter</small></div>}
-        {routes.map(r=><RouteNode key={r.id} route={r} depth={0} selectedId={selected?.id??null} onSelect={r=>{setSelected(r);setShowConfig(true);}} onToggleAdd={handleAddChild} onDelete={deleteRoute} onRename={renameRoute} addingToParent={addingToParent} newChildName={newChildName} setNewChildName={setNewChildName} onConfirmAdd={()=>void addChild(addingToParent!)} busy={busy}/>)}
+        {routes.map(r=><RouteNode key={r.id} route={r} depth={0} selectedId={selected?.id??null} onSelect={r=>{setSelected(r);setShowConfig(true);setShowPreview(false);}} onToggleAdd={handleAddChild} onDelete={deleteRoute} onRename={renameRoute} addingToParent={addingToParent} newChildName={newChildName} setNewChildName={setNewChildName} onConfirmAdd={()=>void addChild(addingToParent!)} busy={busy}/>)}
       </div>
       <div className="pb-palette-section">
         <ComponentPalette/>
@@ -250,8 +266,8 @@ export default function ProjectBuilder(){
       <div className="pb-stats"><span>{flatRoutes.length} rutas</span><span>·</span><span>{tables.length} tablas</span></div>
     </div>
     <div className="pb-right">
-      {showConfig&&selected?<RouteConfig route={selected} tables={tables} forms={forms} views={views} onSave={saveRoute} onClose={()=>{setShowConfig(false);setSelected(null);}}/>
-        :showPreview?<ProjectPreview routes={routes} paths={buildRoutePaths(flatRoutes)} forms={forms} views={views}/>
+      {showPreview?<ProjectPreview routes={routes} paths={buildRoutePaths(flatRoutes)} forms={forms} views={views}/>
+        :showConfig&&selected?<RouteConfig key={selected.id} route={selected} tables={tables} forms={forms} views={views} onSave={saveRoute} onClose={()=>{setShowConfig(false);setSelected(null);}}/>
         :<div className="pb-placeholder"><Layout size={48}/><h2>Constructor de Proyectos</h2><p>Selecciona una ruta del árbol para configurarla, o activa el preview para ver tu proyecto</p></div>}
     </div>
   </div>;
@@ -266,3 +282,5 @@ function buildRoutePaths(routes:BuilderRoute[]){
 function findFirstVisibleRoute(routes:BuilderRoute[]):BuilderRoute|undefined{
   for(const route of routes){if(route.active&&route.visible_in_menu)return route;const child=findFirstVisibleRoute(route.children??[]);if(child)return child;}
 }
+
+function countComponents(components:PageComponent[]):number{return components.reduce((total,component)=>{let children:PageComponent[]=[];if(component.type==='tabs'&&Array.isArray(component.config.tabs))children=(component.config.tabs as {components?:PageComponent[]}[]).flatMap(tab=>tab.components??[]);else if(component.type==='columns'&&Array.isArray(component.config.children))children=(component.config.children as PageComponent[][]).flat();else if(component.type==='card'&&Array.isArray(component.config.children))children=component.config.children as PageComponent[];else if(component.type==='button'&&Array.isArray(component.config.modal_components))children=component.config.modal_components as PageComponent[];return total+1+countComponents(children);},0);}

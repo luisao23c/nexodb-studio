@@ -10,20 +10,20 @@ export interface PageComponent {
   config: Record<string, unknown>;
 }
 
-type TabConfig = {label:string;content_type:'form'|'view';resource_id:number|null};
+type TabConfig = {id:string;label:string;components:PageComponent[]};
 
 const COMPONENT_DEFS: {type:string;label:string;icon:typeof Table2;category:string;color:string;defaultConfig:Record<string,unknown>}[] = [
   {type:'form',label:'Formulario creado',icon:FormInput,category:'Datos',color:'#6366f1',defaultConfig:{form_id:null,show_title:true,title:''}},
   {type:'table',label:'Vista creada',icon:Table2,category:'Datos',color:'#0ea5e9',defaultConfig:{view_id:null,show_title:true,title:''}},
   {type:'chart',label:'Gráfica',icon:BarChart3,category:'Datos',color:'#f59e0b',defaultConfig:{chart_id:null,show_title:true,title:'Gráfica'}},
   {type:'list',label:'Lista',icon:ListOrdered,category:'Datos',color:'#10b981',defaultConfig:{table_name:'',display_field:'',show_title:true,title:'Lista'}},
-  {type:'tabs',label:'Tabs',icon:LayoutList,category:'Layout',color:'#8b5cf6',defaultConfig:{tabs:[{label:'Pestaña 1',content_type:'form',resource_id:null},{label:'Pestaña 2',content_type:'form',resource_id:null}]}},
+  {type:'tabs',label:'Tabs',icon:LayoutList,category:'Layout',color:'#8b5cf6',defaultConfig:{tabs:[{id:'tab_1',label:'Pestaña 1',components:[]},{id:'tab_2',label:'Pestaña 2',components:[]}]}},
   {type:'columns',label:'Columnas',icon:Columns3,category:'Layout',color:'#14b8a6',defaultConfig:{columns:2,gap:16,children:[[],[]]}},
   {type:'card',label:'Card',icon:CreditCard,category:'Layout',color:'#ec4899',defaultConfig:{title:'',subtitle:'',bordered:true,children:[]}},
   {type:'text',label:'Texto',icon:Type,category:'Contenido',color:'#475569',defaultConfig:{content:'Escribe aquí tu texto...',align:'left',size:'base'}},
   {type:'heading',label:'Título',icon:FileText,category:'Contenido',color:'#1e293b',defaultConfig:{text:'Título',level:'h2'}},
   {type:'image',label:'Imagen',icon:Image,category:'Contenido',color:'#f97316',defaultConfig:{src:'',alt:'',width:'100%'}},
-  {type:'button',label:'Botón / Modal',icon:MousePointerClick,category:'Contenido',color:'#6366f1',defaultConfig:{label:'Abrir',variant:'primary',action:'modal',url:'',modal_type:'form',modal_id:null,modal_title:''}},
+  {type:'button',label:'Botón / Modal',icon:MousePointerClick,category:'Contenido',color:'#6366f1',defaultConfig:{label:'Abrir',variant:'primary',action:'modal',url:'',modal_title:'',modal_components:[]}},
   {type:'divider',label:'Divisor',icon:Minus,category:'Contenido',color:'#94a3b8',defaultConfig:{style:'solid'}},
   {type:'spacer',label:'Espaciador',icon:Rows3,category:'Contenido',color:'#cbd5e1',defaultConfig:{height:24}},
   {type:'code',label:'Código',icon:Code2,category:'Contenido',color:'#10b981',defaultConfig:{code:'// código aquí',language:'javascript'}},
@@ -67,12 +67,12 @@ export function ComponentPalette(){
 }
 
 /* ================= Drop Zone ================= */
-export function ComponentDropZone({components,tables,forms,views,onChange}:{components:PageComponent[];tables:string[];forms:BuilderForm[];views:BuilderView[];onChange:(comps:PageComponent[])=>void}){
+export function ComponentDropZone({components,tables,forms,views,onChange,depth=0,label='Canvas de la página'}:{components:PageComponent[];tables:string[];forms:BuilderForm[];views:BuilderView[];onChange:(comps:PageComponent[])=>void;depth?:number;label?:string}){
   const [dragOver,setDragOver] = useState(false);
   const [editingId,setEditingId] = useState<string|null>(null);
 
   function onDrop(e:React.DragEvent){
-    e.preventDefault(); setDragOver(false);
+    e.preventDefault(); e.stopPropagation(); setDragOver(false);
     const type = e.dataTransfer.getData('component-type');
     if(!type) return;
     const def = COMPONENT_DEFS.find(d=>d.type===type);
@@ -107,12 +107,13 @@ export function ComponentDropZone({components,tables,forms,views,onChange}:{comp
     const arr=[...components]; arr.splice(i+1,0,clone); onChange(arr);
   }
 
-  return <div className="cdz-container">
+  return <div className={`cdz-container ${depth>0?'nested':''}`}>
+    {depth>0&&<div className="cdz-zone-label"><span>{label}</span><small>Nivel {depth}</small></div>}
     <div className={`cdz-dropzone ${dragOver?'drag-over':''} ${components.length===0?'empty':''}`}
-      onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';setDragOver(true);}}
-      onDragLeave={()=>setDragOver(false)}
+      onDragOver={e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';setDragOver(true);}}
+      onDragLeave={e=>{if(e.currentTarget===e.target)setDragOver(false);}}
       onDrop={onDrop}>
-      {components.length===0&&<div className="cdz-empty"><LayoutList size={32}/><p>Arrastra componentes aquí</p><small>Suelta componentes de la paleta para construir la página</small></div>}
+      {components.length===0&&<div className="cdz-empty"><LayoutList size={depth?22:32}/><p>Arrastra cualquier componente aquí</p><small>{depth?'Este contenedor funciona como otro canvas':'Construye la página desde la paleta lateral'}</small></div>}
       {components.map((comp,i)=>{
         const def = COMPONENT_DEFS.find(d=>d.type===comp.type);
         const Icon = def?.icon??FileText;
@@ -133,11 +134,38 @@ export function ComponentDropZone({components,tables,forms,views,onChange}:{comp
           {isEditing&&<div className="cdz-comp-config">
             <ComponentEditor comp={comp} tables={tables} forms={forms} views={views} onUpdate={(patch)=>updateComp(comp.id,patch)} onUpdateConfig={(k,v)=>updateConfig(comp.id,k,v)}/>
           </div>}
+          {isEditing&&<NestedComponentCanvas comp={comp} tables={tables} forms={forms} views={views} depth={depth+1} onUpdateConfig={(key,value)=>updateConfig(comp.id,key,value)}/>}
         </div>;
       })}
     </div>
     {dragOver&&<div className="cdz-drop-indicator"><Plus size={16}/> Soltar aquí</div>}
   </div>;
+}
+
+function NestedComponentCanvas({comp,tables,forms,views,depth,onUpdateConfig}:{comp:PageComponent;tables:string[];forms:BuilderForm[];views:BuilderView[];depth:number;onUpdateConfig:(key:string,value:unknown)=>void}){
+  const [activeTab,setActiveTab]=useState(0);
+  if(comp.type==='tabs'){
+    const tabs=normalizeTabs(comp.config.tabs);
+    const active=Math.min(activeTab,Math.max(tabs.length-1,0));
+    const tab=tabs[active];
+    const updateTabs=(next:TabConfig[])=>onUpdateConfig('tabs',next);
+    return <div className="nested-builder tabs-builder">
+      <div className="nested-tabs-bar">{tabs.map((item,index)=><button key={item.id} className={index===active?'active':''} onClick={()=>setActiveTab(index)}>{item.label}<small>{item.components.length}</small></button>)}<button className="nested-add" title="Nueva pestaña" onClick={()=>{const next=[...tabs,{id:genId(),label:`Pestaña ${tabs.length+1}`,components:[]}];updateTabs(next);setActiveTab(next.length-1);}}><Plus size={13}/></button></div>
+      {tab&&<><div className="nested-tab-tools"><input aria-label="Nombre de la pestaña" value={tab.label} onChange={e=>updateTabs(tabs.map((item,index)=>index===active?{...item,label:e.target.value}:item))}/><button className="danger" disabled={tabs.length===1} onClick={()=>{updateTabs(tabs.filter((_,index)=>index!==active));setActiveTab(Math.max(0,active-1));}}><Trash2 size={13}/> Eliminar pestaña</button></div><ComponentDropZone components={tab.components} tables={tables} forms={forms} views={views} depth={depth} label={`Contenido de ${tab.label}`} onChange={children=>updateTabs(tabs.map((item,index)=>index===active?{...item,components:children}:item))}/></>}
+    </div>;
+  }
+  if(comp.type==='columns'){
+    const count=Math.max(1,Math.min(4,Number(comp.config.columns)||2)); const existing=(comp.config.children as PageComponent[][]|undefined)??[]; const columns=Array.from({length:count},(_,index)=>existing[index]??[]);
+    return <div className="nested-builder columns-builder" style={{gridTemplateColumns:`repeat(${count},minmax(0,1fr))`,gap:Number(comp.config.gap)||12}}>{columns.map((children,index)=><ComponentDropZone key={index} components={children} tables={tables} forms={forms} views={views} depth={depth} label={`Columna ${index+1}`} onChange={next=>onUpdateConfig('children',columns.map((column,columnIndex)=>columnIndex===index?next:column))}/>)}</div>;
+  }
+  if(comp.type==='card')return <div className="nested-builder card-builder"><ComponentDropZone components={(comp.config.children as PageComponent[]|undefined)??[]} tables={tables} forms={forms} views={views} depth={depth} label="Contenido de la tarjeta" onChange={next=>onUpdateConfig('children',next)}/></div>;
+  if(comp.type==='button'&&comp.config.action==='modal')return <div className="nested-builder modal-builder"><div className="nested-builder-head"><span>Canvas del modal</span><small>Todo lo que arrastres aparecerá al abrir el botón</small></div><ComponentDropZone components={(comp.config.modal_components as PageComponent[]|undefined)??[]} tables={tables} forms={forms} views={views} depth={depth} label="Contenido del modal" onChange={next=>onUpdateConfig('modal_components',next)}/></div>;
+  return null;
+}
+
+function normalizeTabs(value:unknown):TabConfig[]{
+  if(!Array.isArray(value)||value.length===0)return [{id:'tab_1',label:'Pestaña 1',components:[]}];
+  return value.map((raw,index)=>{const tab=raw as Record<string,unknown>;let components=Array.isArray(tab.components)?tab.components as PageComponent[]:[];if(!components.length&&tab.resource_id){const type=tab.content_type==='view'?'table':'form';components=[{id:`legacy_${index}_${tab.resource_id}`,type,label:type==='table'?'Vista creada':'Formulario creado',config:type==='table'?{view_id:tab.resource_id,show_title:true}:{form_id:tab.resource_id,show_title:true}}];}return{id:String(tab.id||`tab_${index+1}`),label:String(tab.label||`Pestaña ${index+1}`),components};});
 }
 
 /* ================= Component Editor ================= */
@@ -205,7 +233,7 @@ function ComponentEditor({comp,tables,forms,views,onUpdate,onUpdateConfig}:{comp
       </select></label>
       <label className="control"><span>Acción</span><select value={(comp.config.action as string)||'modal'} onChange={e=>onUpdateConfig('action',e.target.value)}><option value="modal">Abrir modal</option><option value="url">Ir a una ruta / URL</option><option value="none">Sin acción</option></select></label>
       {comp.config.action==='url'&&<label className="control"><span>URL</span><input value={(comp.config.url as string)||''} onChange={e=>onUpdateConfig('url',e.target.value)} placeholder="/ruta"/></label>}
-      {comp.config.action==='modal'&&<div className="ce-modal-config"><label className="control"><span>Contenido del modal</span><select value={(comp.config.modal_type as string)||'form'} onChange={e=>{onUpdateConfig('modal_type',e.target.value);onUpdateConfig('modal_id',null);}}><option value="form">Formulario creado</option><option value="view">Vista de tabla creada</option></select></label><label className="control"><span>Componente</span><select value={String(comp.config.modal_id??'')} onChange={e=>onUpdateConfig('modal_id',Number(e.target.value)||null)}><option value="">Seleccionar…</option>{comp.config.modal_type==='view'?views.map(view=><option key={view.id} value={view.id}>{view.name}</option>):forms.map(form=><option key={form.id} value={form.id}>{form.name}</option>)}</select></label><label className="control"><span>Título del modal</span><input value={(comp.config.modal_title as string)||''} onChange={e=>onUpdateConfig('modal_title',e.target.value)} placeholder="Usar título del componente"/></label></div>}
+      {comp.config.action==='modal'&&<><label className="control"><span>Título del modal</span><input value={(comp.config.modal_title as string)||''} onChange={e=>onUpdateConfig('modal_title',e.target.value)} placeholder="Detalle, Nuevo registro…"/></label><p className="ce-builder-note"><Layers size={13}/> El contenido se construye arrastrando componentes en el canvas interno.</p></>}
     </>}
 
     {comp.type==='divider'&&<label className="control"><span>Estilo</span><select value={(comp.config.style as string)||'solid'} onChange={e=>onUpdateConfig('style',e.target.value)}>
@@ -241,12 +269,9 @@ function ComponentEditor({comp,tables,forms,views,onUpdate,onUpdateConfig}:{comp
       <label className="check"><input type="checkbox" checked={!!comp.config.show_title} onChange={e=>onUpdateConfig('show_title',e.target.checked)}/><span>Mostrar título</span></label>
     </>}
 
-    {comp.type==='tabs'&&<div className="ce-tabs-editor">
-      {(comp.config.tabs as TabConfig[]||[]).map((tab,i)=><div key={i} className="ce-tab-card"><div className="ce-tab-row"><input value={tab.label} onChange={e=>{const tabs=[...(comp.config.tabs as TabConfig[])];tabs[i]={...tab,label:e.target.value};onUpdateConfig('tabs',tabs);}}/><button className="danger" onClick={()=>{const tabs=[...(comp.config.tabs as TabConfig[])];tabs.splice(i,1);onUpdateConfig('tabs',tabs);}}><Trash2 size={12}/></button></div><div className="ce-tab-content"><select value={tab.content_type||'form'} onChange={e=>{const tabs=[...(comp.config.tabs as TabConfig[])];tabs[i]={...tab,content_type:e.target.value as 'form'|'view',resource_id:null};onUpdateConfig('tabs',tabs);}}><option value="form">Formulario</option><option value="view">Vista de tabla</option></select><select value={String(tab.resource_id??'')} onChange={e=>{const tabs=[...(comp.config.tabs as TabConfig[])];tabs[i]={...tab,resource_id:Number(e.target.value)||null};onUpdateConfig('tabs',tabs);}}><option value="">Seleccionar componente…</option>{tab.content_type==='view'?views.map(view=><option key={view.id} value={view.id}>{view.name}</option>):forms.map(form=><option key={form.id} value={form.id}>{form.name}</option>)}</select></div></div>)}
-      <button className="button ghost small" onClick={()=>{
-        const tabs=[...(comp.config.tabs as TabConfig[]||[]),{label:`Pestaña ${(comp.config.tabs as TabConfig[]||[]).length+1}`,content_type:'form' as const,resource_id:null}]; onUpdateConfig('tabs',tabs);
-      }}><Plus size={13}/> Agregar pestaña</button>
-    </div>}
+    {comp.type==='tabs'&&<p className="ce-builder-note"><LayoutList size={13}/> Cada pestaña es un canvas independiente. Activa una pestaña y arrastra dentro cualquier componente.</p>}
+    {comp.type==='columns'&&<div className="ce-inline-grid"><label className="control"><span>Columnas</span><select value={Number(comp.config.columns)||2} onChange={e=>{const count=Number(e.target.value);const current=(comp.config.children as PageComponent[][]|undefined)??[];onUpdateConfig('columns',count);onUpdateConfig('children',Array.from({length:count},(_,index)=>current[index]??[]));}}><option value={1}>1 columna</option><option value={2}>2 columnas</option><option value={3}>3 columnas</option><option value={4}>4 columnas</option></select></label><label className="control"><span>Separación</span><select value={Number(comp.config.gap)||12} onChange={e=>onUpdateConfig('gap',Number(e.target.value))}><option value={6}>Compacta</option><option value={12}>Normal</option><option value={20}>Amplia</option></select></label></div>}
+    {comp.type==='card'&&<><div className="ce-inline-grid"><label className="control"><span>Título</span><input value={String(comp.config.title??'')} onChange={e=>onUpdateConfig('title',e.target.value)} placeholder="Título de la tarjeta"/></label><label className="control"><span>Subtítulo</span><input value={String(comp.config.subtitle??'')} onChange={e=>onUpdateConfig('subtitle',e.target.value)} placeholder="Descripción breve"/></label></div><p className="ce-builder-note"><CreditCard size={13}/> Arrastra cualquier composición al canvas de la tarjeta.</p></>}
   </div>;
 }
 
@@ -267,9 +292,9 @@ export function renderComponents(components:PageComponent[],forms:BuilderForm[]=
       case 'alert': return <div key={comp.id} className={`preview-comp preview-alert alert-${comp.config.type||'info'}`}>{comp.config.message as string}</div>;
       case 'badge': return <div key={comp.id} className="preview-comp"><span className="preview-badge-demo" style={{background:comp.config.color as string}}>{comp.config.label as string}</span></div>;
       case 'list': return <div key={comp.id} className="preview-comp preview-list"><div className="preview-comp-header"><ListOrdered size={16}/><span>{comp.label}</span></div><div className="preview-list-placeholder"><p>Lista → <code>{(comp.config.table_name as string)||'sin tabla'}</code></p></div></div>;
-      case 'tabs': return <TabsRuntime key={comp.id} tabs={(comp.config.tabs as TabConfig[])||[]} forms={forms} views={views}/>;
-      case 'columns': return <div key={comp.id} className="preview-comp preview-cols" style={{gridTemplateColumns:`repeat(${comp.config.columns||2},1fr)`}}>{Array.from({length:(comp.config.columns||2) as number}).map((_,i)=><div key={i} className="preview-col"><p className="muted">Columna {i+1}</p></div>)}</div>;
-      case 'card': return <div key={comp.id} className="preview-comp preview-card"><div className="preview-card-header"><strong>{String(comp.config.title||'Card')}</strong>{Boolean(comp.config.subtitle)&&<small>{String(comp.config.subtitle)}</small>}</div><div className="preview-card-body"><p className="muted">Contenido de la card</p></div></div>;
+      case 'tabs': return <TabsRuntime key={comp.id} tabs={normalizeTabs(comp.config.tabs)} forms={forms} views={views}/>;
+      case 'columns': {const count=Math.max(1,Math.min(4,Number(comp.config.columns)||2));const children=(comp.config.children as PageComponent[][]|undefined)??[];return <div key={comp.id} className="preview-comp preview-cols" style={{gridTemplateColumns:`repeat(${count},minmax(0,1fr))`,gap:Number(comp.config.gap)||12}}>{Array.from({length:count},(_,i)=><div key={i} className="preview-col runtime-container">{children[i]?.length?renderComponents(children[i],forms,views):<span className="runtime-empty-container">Columna vacía</span>}</div>)}</div>;}
+      case 'card': {const children=(comp.config.children as PageComponent[]|undefined)??[];return <div key={comp.id} className="preview-comp preview-card"><div className="preview-card-header"><strong>{String(comp.config.title||'Tarjeta')}</strong>{Boolean(comp.config.subtitle)&&<small>{String(comp.config.subtitle)}</small>}</div><div className="preview-card-body">{children.length?renderComponents(children,forms,views):<span className="runtime-empty-container">Tarjeta vacía</span>}</div></div>;}
       case 'table_detail': return <div key={comp.id} className="preview-comp preview-table-detail"><div className="preview-comp-header"><Table2 size={16}/><span>{comp.label}</span></div><div className="preview-detail-placeholder"><p>Detalle de tabla → <code>{(comp.config.table_name as string)||'sin tabla'}</code></p></div></div>;
       default: return <div key={comp.id} className="preview-comp preview-unknown"><FileText size={16}/><span>{comp.label}</span></div>;
     }
@@ -308,13 +333,16 @@ function SavedViewRuntime({view,title}:{view?:BuilderView;title?:string}){
 function ActionButtonRuntime({component,forms,views}:{component:PageComponent;forms:BuilderForm[];views:BuilderView[]}){
   const [open,setOpen]=useState(false); const action=String(component.config.action??'none');
   const click=()=>{if(action==='modal')setOpen(true);else if(action==='url'&&component.config.url)window.location.hash=String(component.config.url);};
-  return <div className="preview-comp runtime-button"><button className={`button ${component.config.variant||'primary'}`} onClick={click}>{String(component.config.label||component.label)}</button>{open&&<div className="runtime-modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setOpen(false)}><section className="runtime-modal"><header><div><span>Componente del proyecto</span><h2>{String(component.config.modal_title||component.config.label||component.label)}</h2></div><button onClick={()=>setOpen(false)}><X size={18}/></button></header><div className="runtime-modal-body">{component.config.modal_type==='view'?<SavedViewRuntime view={views.find(view=>view.id===Number(component.config.modal_id))}/>:<SavedFormRuntime form={forms.find(form=>form.id===Number(component.config.modal_id))}/>}</div></section></div>}</div>;
+  const modalComponents=(component.config.modal_components as PageComponent[]|undefined)??legacyModalComponents(component);
+  return <div className="preview-comp runtime-button"><button className={`button ${component.config.variant||'primary'}`} onClick={click}>{String(component.config.label||component.label)}</button>{open&&<div className="runtime-modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setOpen(false)}><section className="runtime-modal"><header><div><span>Componente del proyecto</span><h2>{String(component.config.modal_title||component.config.label||component.label)}</h2></div><button onClick={()=>setOpen(false)}><X size={18}/></button></header><div className="runtime-modal-body">{modalComponents.length?renderComponents(modalComponents,forms,views):<MissingComponent icon={Layers} text="El modal todavía no tiene componentes"/>}</div></section></div>}</div>;
 }
 
 function TabsRuntime({tabs,forms,views}:{tabs:TabConfig[];forms:BuilderForm[];views:BuilderView[]}){
   const [active,setActive]=useState(0); const tab=tabs[active];
-  return <section className="preview-comp runtime-tabs"><div className="preview-tabs-bar">{tabs.map((item,index)=><button key={`${item.label}-${index}`} className={active===index?'active':''} onClick={()=>setActive(index)}>{item.label}</button>)}</div><div className="preview-tabs-content">{!tab?<p className="muted">Agrega una pestaña</p>:tab.content_type==='view'?<SavedViewRuntime view={views.find(view=>view.id===Number(tab.resource_id))}/>:<SavedFormRuntime form={forms.find(form=>form.id===Number(tab.resource_id))}/>}</div></section>;
+  return <section className="preview-comp runtime-tabs"><div className="preview-tabs-bar">{tabs.map((item,index)=><button key={item.id} className={active===index?'active':''} onClick={()=>setActive(index)}>{item.label}</button>)}</div><div className="preview-tabs-content">{!tab?<p className="muted">Agrega una pestaña</p>:tab.components.length?renderComponents(tab.components,forms,views):<span className="runtime-empty-container">Pestaña vacía</span>}</div></section>;
 }
+
+function legacyModalComponents(component:PageComponent):PageComponent[]{const id=component.config.modal_id;if(!id)return[];const type=component.config.modal_type==='view'?'table':'form';return[{id:`legacy_modal_${component.id}`,type,label:type==='table'?'Vista creada':'Formulario creado',config:type==='table'?{view_id:id,show_title:true}:{form_id:id,show_title:true}}];}
 
 function MissingComponent({icon:Icon,text}:{icon:typeof Table2;text:string}){return <div className="preview-comp runtime-missing"><Icon size={24}/><span>{text}</span></div>;}
 function formatRuntimeCell(value:unknown,column:BuilderViewColumn){if(value===null||value===undefined)return'—';if(column.display_type==='boolean')return Number(value)?'Sí':'No';if(column.display_type==='money')return new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(Number(value));if(column.display_type==='json')return typeof value==='string'?value:JSON.stringify(value);return String(value);}
