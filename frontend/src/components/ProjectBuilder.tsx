@@ -47,7 +47,7 @@ function RouteNode({route,depth,selectedId,onSelect,onToggleAdd,onDelete,onRenam
 }
 
 /* ================= Route Config Panel ================= */
-function RouteConfig({route,tables,forms,views,onSave,onClose}:{route:BuilderRoute;tables:string[];forms:BuilderForm[];views:BuilderView[];onSave:(id:number,data:Partial<BuilderRoute>)=>Promise<void>;onClose:()=>void}){
+function RouteConfig({route,tables,forms,views,routes,onSave,onClose}:{route:BuilderRoute;tables:string[];forms:BuilderForm[];views:BuilderView[];routes:BuilderRoute[];onSave:(id:number,data:Partial<BuilderRoute>)=>Promise<void>;onClose:()=>void}){
   const [form,setForm] = useState({name:route.name,slug:route.slug,icon:route.icon||'',content_type:route.content_type,layout:route.layout,active:route.active,visible_in_menu:route.visible_in_menu,badge_color:route.badge_color||'',badge_label:route.badge_label||'',content_config:route.content_config||{}});
   const [components,setComponents] = useState<PageComponent[]>((route.content_config?.components as PageComponent[])||[]);
   const [busy,setBusy] = useState(false);
@@ -128,7 +128,7 @@ function RouteConfig({route,tables,forms,views,onSave,onClose}:{route:BuilderRou
 
       {activeTab==='build'&&<div className="rcp-builder-workspace">
         <div className="rcp-workspace-bar"><div><Layers size={15}/><span>Canvas de {form.name}</span><small>Arrastra, configura y anida componentes</small></div><DeviceSelector value={device} onChange={setDevice}/></div>
-        <div className="rcp-builder-grid"><div className="rcp-canvas-pane"><ComponentDropZone components={components} tables={tables} forms={forms} views={views} onChange={setComponents}/></div><div className="rcp-live-pane"><span className="rcp-pane-label"><Eye size={12}/> Resultado en tiempo real</span><RouteDraftPreview name={form.name} slug={form.slug} contentType={form.content_type} contentConfig={form.content_config} components={components} forms={forms} views={views} device={device}/></div></div>
+        <div className="rcp-builder-grid"><div className="rcp-canvas-pane"><ComponentDropZone components={components} tables={tables} forms={forms} views={views} routes={routes} onChange={setComponents}/></div><div className="rcp-live-pane"><span className="rcp-pane-label"><Eye size={12}/> Resultado en tiempo real</span><RouteDraftPreview name={form.name} slug={form.slug} contentType={form.content_type} contentConfig={form.content_config} components={components} forms={forms} views={views} device={device}/></div></div>
       </div>}
 
       {activeTab==='preview'&&<div className="rcp-full-preview"><div className="rcp-preview-toolbar"><div><strong>Vista previa de la ruta</strong><small>Así se verá dentro del proyecto</small></div><DeviceSelector value={device} onChange={setDevice}/></div><RouteDraftPreview name={form.name} slug={form.slug} contentType={form.content_type} contentConfig={form.content_config} components={components} forms={forms} views={views} device={device}/></div>}
@@ -148,6 +148,7 @@ function RouteDraftPreview({name,slug,contentType,contentConfig,components,forms
   if(components.length)content=renderComponents(components,forms,views);
   else if(contentType==='form')content=renderComponents([{id:'draft-form',type:'form',label:name,config:{form_id:contentConfig.form_id,show_title:false}}],forms,views);
   else if(contentType==='table')content=renderComponents([{id:'draft-view',type:'table',label:name,config:{view_id:contentConfig.view_id,show_title:false}}],forms,views);
+  else if(contentType==='chart')content=renderComponents([{id:'draft-chart',type:'chart',label:name,config:{chart_id:contentConfig.chart_id,title:name}}],forms,views);
   else content=<div className="draft-preview-empty"><Layout size={28}/><strong>Canvas vacío</strong><span>Arrastra componentes desde la paleta para comenzar</span></div>;
   return <div className={`route-device-stage ${device}`}><div className="route-device-frame"><div className="route-device-bar"><i/><i/><i/><span>proyecto.local/{slug}</span></div><div className="route-device-content"><div className="route-preview-title"><span>Vista de proyecto</span><h2>{name}</h2></div>{content}</div></div></div>;
 }
@@ -163,6 +164,8 @@ function ProjectPreview({routes,paths,forms,views,onClose}:{routes:BuilderRoute[
     const first=findFirstVisibleRoute(routes);
     if(first)setActivePath(paths[first.id]||'/');
   },[routes,paths,activePath]);
+
+  useEffect(()=>{const navigate=(event:Event)=>{const detail=(event as CustomEvent<{path?:string;routeId?:number|null}>).detail;const target=detail?.routeId?paths[detail.routeId]:detail?.path;if(target&&Object.values(paths).includes(target))setActivePath(target);};window.addEventListener('nexodb:navigate',navigate);return()=>window.removeEventListener('nexodb:navigate',navigate);},[paths]);
 
   function buildNav(items:BuilderRoute[],depth=0):React.ReactNode{
     return <ul className="preview-nav-list" style={{paddingLeft:depth*16}}>
@@ -188,7 +191,7 @@ function ProjectPreview({routes,paths,forms,views,onClose}:{routes:BuilderRoute[
     switch(route.content_type){
       case 'table': return <div className="preview-content"><h2>{route.name}</h2>{renderComponents([{id:`route-view-${route.id}`,type:'table',label:route.name,config:{view_id:route.content_config?.view_id,show_title:false}}],forms,views)}</div>;
       case 'form': return <div className="preview-content"><h2>{route.name}</h2>{renderComponents([{id:`route-form-${route.id}`,type:'form',label:route.name,config:{form_id:route.content_config?.form_id,show_title:false}}],forms,views)}</div>;
-      case 'chart': return <div className="preview-content"><h2>{route.name}</h2><p className="muted">Gráfica #{(route.content_config?.chart_id as string)||'—'}</p><div className="preview-chart-placeholder"><BarChart3 size={32}/><p>Vista previa de gráfica</p></div></div>;
+      case 'chart': return <div className="preview-content"><h2>{route.name}</h2>{renderComponents([{id:`route-chart-${route.id}`,type:'chart',label:route.name,config:{chart_id:route.content_config?.chart_id,title:route.name}}],forms,views)}</div>;
       case 'page': return <div className="preview-content"><h2>{route.name}</h2><div className="preview-page-placeholder"><FileText size={32}/><p>Página personalizada</p></div></div>;
       case 'redirect': return <div className="preview-content"><h2>{route.name}</h2><p className="muted">Redirect → <code>{(route.content_config?.target_url as string)||'—'}</code></p></div>;
       case 'divider': return <hr className="preview-divider"/>;
@@ -292,7 +295,7 @@ export default function ProjectBuilder({project,onProjectUpdated}:{project?:Proj
     <div className="pb-right">
       {showVersions&&project?<ProjectVersions project={project} onClose={()=>setShowVersions(false)} onRestored={async()=>{await load();const refreshed=(await api.projects()).find(item=>item.id===project.id);if(refreshed)onProjectUpdated?.(refreshed);setSelected(null);setShowConfig(false);}} onPublished={updated=>onProjectUpdated?.(updated)}/>
         :showPreview?<ProjectPreview routes={routes} paths={buildRoutePaths(flatRoutes)} forms={forms} views={views} onClose={()=>setShowPreview(false)}/>
-        :showConfig&&selected?<RouteConfig key={selected.id} route={selected} tables={tables} forms={forms} views={views} onSave={saveRoute} onClose={()=>{setShowConfig(false);setSelected(null);}}/>
+        :showConfig&&selected?<RouteConfig key={selected.id} route={selected} tables={tables} forms={forms} views={views} routes={flatRoutes} onSave={saveRoute} onClose={()=>{setShowConfig(false);setSelected(null);}}/>
         :<div className="pb-placeholder"><Layout size={48}/><h2>Constructor de Proyectos</h2><p>Selecciona una ruta del árbol para configurarla, o activa el preview para ver tu proyecto</p></div>}
     </div>
   </div>;
@@ -308,4 +311,4 @@ export function findFirstVisibleRoute(routes:BuilderRoute[]):BuilderRoute|undefi
   for(const route of routes){if(route.active&&route.visible_in_menu)return route;const child=findFirstVisibleRoute(route.children??[]);if(child)return child;}
 }
 
-function countComponents(components:PageComponent[]):number{return components.reduce((total,component)=>{let children:PageComponent[]=[];if(component.type==='tabs'&&Array.isArray(component.config.tabs))children=(component.config.tabs as {components?:PageComponent[]}[]).flatMap(tab=>tab.components??[]);else if(component.type==='columns'&&Array.isArray(component.config.children))children=(component.config.children as PageComponent[][]).flat();else if(component.type==='card'&&Array.isArray(component.config.children))children=component.config.children as PageComponent[];else if(component.type==='button'&&Array.isArray(component.config.modal_components))children=component.config.modal_components as PageComponent[];return total+1+countComponents(children);},0);}
+function countComponents(components:PageComponent[]):number{return components.reduce((total,component)=>{let children:PageComponent[]=[];if(component.type==='tabs'&&Array.isArray(component.config.tabs))children=(component.config.tabs as {components?:PageComponent[]}[]).flatMap(tab=>tab.components??[]);else if(component.type==='columns'&&Array.isArray(component.config.children))children=(component.config.children as PageComponent[][]).flat();else if(['card','section'].includes(component.type)&&Array.isArray(component.config.children))children=component.config.children as PageComponent[];else if(component.type==='button'&&Array.isArray(component.config.modal_components))children=component.config.modal_components as PageComponent[];return total+1+countComponents(children);},0);}

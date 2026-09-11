@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { GripVertical, Plus, Trash2, Copy, ChevronDown, ChevronRight, Table2, FormInput, BarChart3, Type, Image, MousePointerClick, Minus, Code2, LayoutList, Columns3, Rows3, CreditCard, ListOrdered, FileText, Star, AlertTriangle, X, Layers, Search, LoaderCircle } from 'lucide-react';
+import { GripVertical, Plus, Trash2, Copy, ChevronDown, ChevronRight, Table2, FormInput, BarChart3, Type, Image, MousePointerClick, Minus, Code2, LayoutList, Columns3, Rows3, CreditCard, ListOrdered, FileText, Star, AlertTriangle, X, Layers, Search, LoaderCircle, Play, PanelTop, Gauge, Workflow } from 'lucide-react';
 import { api } from '../api/client';
-import type { BuilderForm, BuilderFormField, BuilderView, BuilderViewColumn } from '../types';
+import type { BuilderForm, BuilderFormField, BuilderRoute, BuilderView, BuilderViewColumn } from '../types';
 
 export interface PageComponent {
   id: string;
@@ -10,7 +10,7 @@ export interface PageComponent {
   config: Record<string, unknown>;
 }
 
-type DropZoneProps = {components:PageComponent[];tables:string[];forms:BuilderForm[];views:BuilderView[];onChange:(comps:PageComponent[])=>void;depth?:number;label?:string;zoneId?:string;ancestorIds?:string[]};
+type DropZoneProps = {components:PageComponent[];tables:string[];forms:BuilderForm[];views:BuilderView[];routes?:BuilderRoute[];onChange:(comps:PageComponent[])=>void;depth?:number;label?:string;zoneId?:string;ancestorIds?:string[]};
 const CanvasMoveContext=createContext<null|{move:(componentId:string,targetZone:string,ancestorIds:string[])=>void}>(null);
 
 type TabConfig = {id:string;label:string;components:PageComponent[]};
@@ -19,10 +19,16 @@ const COMPONENT_DEFS: {type:string;label:string;icon:typeof Table2;category:stri
   {type:'form',label:'Formulario creado',icon:FormInput,category:'Datos',color:'#6366f1',defaultConfig:{form_id:null,show_title:true,title:''}},
   {type:'table',label:'Vista creada',icon:Table2,category:'Datos',color:'#0ea5e9',defaultConfig:{view_id:null,show_title:true,title:''}},
   {type:'chart',label:'Gráfica',icon:BarChart3,category:'Datos',color:'#f59e0b',defaultConfig:{chart_id:null,show_title:true,title:'Gráfica'}},
-  {type:'list',label:'Lista',icon:ListOrdered,category:'Datos',color:'#10b981',defaultConfig:{table_name:'',display_field:'',show_title:true,title:'Lista'}},
+  {type:'list',label:'Lista dinámica',icon:ListOrdered,category:'Datos',color:'#10b981',defaultConfig:{table_name:'',display_field:'',show_title:true,title:'Lista',limit:6}},
   {type:'tabs',label:'Tabs',icon:LayoutList,category:'Layout',color:'#8b5cf6',defaultConfig:{tabs:[{id:'tab_1',label:'Pestaña 1',components:[]},{id:'tab_2',label:'Pestaña 2',components:[]}]}},
   {type:'columns',label:'Columnas',icon:Columns3,category:'Layout',color:'#14b8a6',defaultConfig:{columns:2,gap:16,children:[[],[]]}},
   {type:'card',label:'Card',icon:CreditCard,category:'Layout',color:'#ec4899',defaultConfig:{title:'',subtitle:'',bordered:true,children:[]}},
+  {type:'section',label:'Sección',icon:PanelTop,category:'Layout',color:'#7c3aed',defaultConfig:{title:'Nueva sección',subtitle:'',tone:'plain',padding:24,children:[]}},
+  {type:'hero',label:'Portada / Hero',icon:Star,category:'Contenido',color:'#7c3aed',defaultConfig:{eyebrow:'Bienvenido',title:'Construye algo extraordinario',description:'Presenta el objetivo principal de esta página.',align:'left',background:'#f5f3ff'}},
+  {type:'metric',label:'Indicador KPI',icon:Gauge,category:'Contenido',color:'#0891b2',defaultConfig:{label:'Indicador',value:'0',helper:'Actualizado ahora',color:'#6366f1'}},
+  {type:'accordion',label:'Acordeón',icon:ChevronDown,category:'Contenido',color:'#0f766e',defaultConfig:{items:[{title:'Pregunta o sección',content:'Agrega aquí la información.'}]}},
+  {type:'video',label:'Video',icon:Play,category:'Contenido',color:'#dc2626',defaultConfig:{src:'',title:'Video',ratio:'16/9'}},
+  {type:'progress',label:'Progreso',icon:Rows3,category:'Contenido',color:'#16a34a',defaultConfig:{label:'Progreso',value:65,color:'#22c55e'}},
   {type:'text',label:'Texto',icon:Type,category:'Contenido',color:'#475569',defaultConfig:{content:'Escribe aquí tu texto...',align:'left',size:'base'}},
   {type:'heading',label:'Título',icon:FileText,category:'Contenido',color:'#1e293b',defaultConfig:{text:'Título',level:'h2'}},
   {type:'image',label:'Imagen',icon:Image,category:'Contenido',color:'#f97316',defaultConfig:{src:'',alt:'',width:'100%'}},
@@ -45,25 +51,30 @@ function deepClone<T>(obj:T):T{ return JSON.parse(JSON.stringify(obj)); }
 /* ================= Component Palette (Drag Source) ================= */
 export function ComponentPalette(){
   const [openCat,setOpenCat] = useState<string|null>('Datos');
+  const [query,setQuery]=useState('');
 
   function onDragStart(e:React.DragEvent,type:string){
     e.dataTransfer.setData('component-type',type);
     e.dataTransfer.effectAllowed='copy';
   }
 
+  const visible=COMPONENT_DEFS.filter(def=>!query||def.label.toLowerCase().includes(query.toLowerCase())||def.category.toLowerCase().includes(query.toLowerCase()));
+  function add(type:string){window.dispatchEvent(new CustomEvent('nexodb:add-component',{detail:{type}}));}
+
   return <div className="cp-palette">
-    <div className="cp-palette-header"><Layers size={14}/><strong>Componentes</strong><small>Arrastra a la zona</small></div>
-    {CATEGORIES.map(cat=><div key={cat} className="cp-cat">
+    <div className="cp-palette-header"><Layers size={14}/><strong>Bloques</strong><small>Arrastra o haz clic</small></div>
+    <label className="cp-search"><Search size={13}/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Buscar bloque…"/></label>
+    {CATEGORIES.map(cat=>visible.some(def=>def.category===cat)&&<div key={cat} className="cp-cat">
       <button className="cp-cat-header" onClick={()=>setOpenCat(openCat===cat?null:cat)}>
         {openCat===cat?<ChevronDown size={13}/>:<ChevronRight size={13}/>}
         <span>{cat}</span>
-        <small>{COMPONENT_DEFS.filter(d=>d.category===cat).length}</small>
+        <small>{visible.filter(d=>d.category===cat).length}</small>
       </button>
       {openCat===cat&&<div className="cp-cat-items">
-        {COMPONENT_DEFS.filter(d=>d.category===cat).map(def=><div key={def.type} className="cp-item" draggable onDragStart={e=>onDragStart(e,def.type)} title={def.label}>
+        {visible.filter(d=>d.category===cat).map(def=><button type="button" key={def.type} className="cp-item" draggable onDragStart={e=>onDragStart(e,def.type)} onClick={()=>add(def.type)} title={`${def.label}: clic para agregar o arrastra`}>
           <div className="cp-item-icon" style={{background:def.color+'15',color:def.color}}><def.icon size={15}/></div>
           <span>{def.label}</span>
-        </div>)}
+        </button>)}
       </div>}
     </div>)}
   </div>;
@@ -72,12 +83,13 @@ export function ComponentPalette(){
 /* ================= Drop Zone ================= */
 export function ComponentDropZone(props:DropZoneProps){
   const parentContext=useContext(CanvasMoveContext);
+  useEffect(()=>{if(parentContext)return;const handler=(event:Event)=>{const type=(event as CustomEvent<{type:string}>).detail?.type;const def=COMPONENT_DEFS.find(item=>item.type===type);if(def)props.onChange([...props.components,{id:genId(),type:def.type,label:def.label,config:deepClone(def.defaultConfig)}]);};window.addEventListener('nexodb:add-component',handler);return()=>window.removeEventListener('nexodb:add-component',handler);},[parentContext,props]);
   if(parentContext)return <ComponentDropZoneInner {...props}/>;
   const move=(componentId:string,targetZone:string,ancestorIds:string[])=>{if(ancestorIds.includes(componentId))return;const moving=findComponent(props.components,componentId);if(!moving)return;props.onChange(insertIntoZone(removeComponent(props.components,componentId),targetZone,moving));};
   return <CanvasMoveContext.Provider value={{move}}><ComponentDropZoneInner {...props} zoneId="root" ancestorIds={[]}/></CanvasMoveContext.Provider>;
 }
 
-function ComponentDropZoneInner({components,tables,forms,views,onChange,depth=0,label='Canvas de la página',zoneId='root',ancestorIds=[]}:DropZoneProps){
+function ComponentDropZoneInner({components,tables,forms,views,routes=[],onChange,depth=0,label='Canvas de la página',zoneId='root',ancestorIds=[]}:DropZoneProps){
   const canvas=useContext(CanvasMoveContext);
   const [dragOver,setDragOver] = useState(false);
   const [editingId,setEditingId] = useState<string|null>(null);
@@ -136,7 +148,8 @@ function ComponentDropZoneInner({components,tables,forms,views,onChange,depth=0,
             <span className="cdz-drag-handle" onClick={e=>e.stopPropagation()}><GripVertical size={14}/></span>
             <div className="cdz-comp-icon" style={{background:def?.color+'15',color:def?.color}}><Icon size={14}/></div>
             <span className="cdz-comp-label">{comp.label}</span>
-            <span className="cdz-comp-type">{def?.label}</span>
+            <span className={`cdz-comp-type ${comp.type==='button'?'flow':''}`}>{comp.type==='button'?buttonActionLabel(String(comp.config.action||'none')):def?.label}</span>
+            <code className="cdz-comp-id" title="Identificador para flujos">{comp.id}</code>
             <div className="cdz-comp-actions" onClick={e=>e.stopPropagation()}>
               <button onClick={()=>moveComp(comp.id,-1)} disabled={i===0} title="Subir"><ChevronDown size={12} style={{transform:'rotate(180deg)'}}/></button>
               <button onClick={()=>moveComp(comp.id,1)} disabled={i===components.length-1} title="Bajar"><ChevronDown size={12}/></button>
@@ -145,9 +158,9 @@ function ComponentDropZoneInner({components,tables,forms,views,onChange,depth=0,
             </div>
           </div>
           {isEditing&&<div className="cdz-comp-config">
-            <ComponentEditor comp={comp} tables={tables} forms={forms} views={views} onUpdate={(patch)=>updateComp(comp.id,patch)} onUpdateConfig={(k,v)=>updateConfig(comp.id,k,v)}/>
+            <ComponentEditor comp={comp} tables={tables} forms={forms} views={views} routes={routes} onUpdate={(patch)=>updateComp(comp.id,patch)} onUpdateConfig={(k,v)=>updateConfig(comp.id,k,v)}/>
           </div>}
-          {isEditing&&<NestedComponentCanvas comp={comp} tables={tables} forms={forms} views={views} depth={depth+1} ancestorIds={[...ancestorIds,comp.id]} onUpdateConfig={(key,value)=>updateConfig(comp.id,key,value)}/>}
+          {isEditing&&<NestedComponentCanvas comp={comp} tables={tables} forms={forms} views={views} routes={routes} depth={depth+1} ancestorIds={[...ancestorIds,comp.id]} onUpdateConfig={(key,value)=>updateConfig(comp.id,key,value)}/>}
         </div>;
       })}
     </div>
@@ -155,7 +168,7 @@ function ComponentDropZoneInner({components,tables,forms,views,onChange,depth=0,
   </div>;
 }
 
-function NestedComponentCanvas({comp,tables,forms,views,depth,ancestorIds,onUpdateConfig}:{comp:PageComponent;tables:string[];forms:BuilderForm[];views:BuilderView[];depth:number;ancestorIds:string[];onUpdateConfig:(key:string,value:unknown)=>void}){
+function NestedComponentCanvas({comp,tables,forms,views,routes,depth,ancestorIds,onUpdateConfig}:{comp:PageComponent;tables:string[];forms:BuilderForm[];views:BuilderView[];routes:BuilderRoute[];depth:number;ancestorIds:string[];onUpdateConfig:(key:string,value:unknown)=>void}){
   const [activeTab,setActiveTab]=useState(0);
   if(comp.type==='tabs'){
     const tabs=normalizeTabs(comp.config.tabs);
@@ -164,15 +177,15 @@ function NestedComponentCanvas({comp,tables,forms,views,depth,ancestorIds,onUpda
     const updateTabs=(next:TabConfig[])=>onUpdateConfig('tabs',next);
     return <div className="nested-builder tabs-builder">
       <div className="nested-tabs-bar">{tabs.map((item,index)=><button key={item.id} className={index===active?'active':''} onClick={()=>setActiveTab(index)}>{item.label}<small>{item.components.length}</small></button>)}<button className="nested-add" title="Nueva pestaña" onClick={()=>{const next=[...tabs,{id:genId(),label:`Pestaña ${tabs.length+1}`,components:[]}];updateTabs(next);setActiveTab(next.length-1);}}><Plus size={13}/></button></div>
-      {tab&&<><div className="nested-tab-tools"><input aria-label="Nombre de la pestaña" value={tab.label} onChange={e=>updateTabs(tabs.map((item,index)=>index===active?{...item,label:e.target.value}:item))}/><button className="danger" disabled={tabs.length===1} onClick={()=>{updateTabs(tabs.filter((_,index)=>index!==active));setActiveTab(Math.max(0,active-1));}}><Trash2 size={13}/> Eliminar pestaña</button></div><ComponentDropZone components={tab.components} tables={tables} forms={forms} views={views} depth={depth} zoneId={`tab:${comp.id}:${tab.id}`} ancestorIds={ancestorIds} label={`Contenido de ${tab.label}`} onChange={children=>updateTabs(tabs.map((item,index)=>index===active?{...item,components:children}:item))}/></>}
+      {tab&&<><div className="nested-tab-tools"><input aria-label="Nombre de la pestaña" value={tab.label} onChange={e=>updateTabs(tabs.map((item,index)=>index===active?{...item,label:e.target.value}:item))}/><button className="danger" disabled={tabs.length===1} onClick={()=>{updateTabs(tabs.filter((_,index)=>index!==active));setActiveTab(Math.max(0,active-1));}}><Trash2 size={13}/> Eliminar pestaña</button></div><ComponentDropZone components={tab.components} tables={tables} forms={forms} views={views} routes={routes} depth={depth} zoneId={`tab:${comp.id}:${tab.id}`} ancestorIds={ancestorIds} label={`Contenido de ${tab.label}`} onChange={children=>updateTabs(tabs.map((item,index)=>index===active?{...item,components:children}:item))}/></>}
     </div>;
   }
   if(comp.type==='columns'){
     const count=Math.max(1,Math.min(4,Number(comp.config.columns)||2)); const existing=(comp.config.children as PageComponent[][]|undefined)??[]; const columns=Array.from({length:count},(_,index)=>existing[index]??[]);
-    return <div className="nested-builder columns-builder" style={{gridTemplateColumns:`repeat(${count},minmax(0,1fr))`,gap:Number(comp.config.gap)||12}}>{columns.map((children,index)=><ComponentDropZone key={index} components={children} tables={tables} forms={forms} views={views} depth={depth} zoneId={`column:${comp.id}:${index}`} ancestorIds={ancestorIds} label={`Columna ${index+1}`} onChange={next=>onUpdateConfig('children',columns.map((column,columnIndex)=>columnIndex===index?next:column))}/>)}</div>;
+    return <div className="nested-builder columns-builder" style={{gridTemplateColumns:`repeat(${count},minmax(0,1fr))`,gap:Number(comp.config.gap)||12}}>{columns.map((children,index)=><ComponentDropZone key={index} components={children} tables={tables} forms={forms} views={views} routes={routes} depth={depth} zoneId={`column:${comp.id}:${index}`} ancestorIds={ancestorIds} label={`Columna ${index+1}`} onChange={next=>onUpdateConfig('children',columns.map((column,columnIndex)=>columnIndex===index?next:column))}/>)}</div>;
   }
-  if(comp.type==='card')return <div className="nested-builder card-builder"><ComponentDropZone components={(comp.config.children as PageComponent[]|undefined)??[]} tables={tables} forms={forms} views={views} depth={depth} zoneId={`card:${comp.id}`} ancestorIds={ancestorIds} label="Contenido de la tarjeta" onChange={next=>onUpdateConfig('children',next)}/></div>;
-  if(comp.type==='button'&&comp.config.action==='modal')return <div className="nested-builder modal-builder"><div className="nested-builder-head"><span>Canvas del modal</span><small>Todo lo que arrastres aparecerá al abrir el botón</small></div><ComponentDropZone components={(comp.config.modal_components as PageComponent[]|undefined)??[]} tables={tables} forms={forms} views={views} depth={depth} zoneId={`modal:${comp.id}`} ancestorIds={ancestorIds} label="Contenido del modal" onChange={next=>onUpdateConfig('modal_components',next)}/></div>;
+  if(['card','section'].includes(comp.type))return <div className="nested-builder card-builder"><ComponentDropZone components={(comp.config.children as PageComponent[]|undefined)??[]} tables={tables} forms={forms} views={views} routes={routes} depth={depth} zoneId={`${comp.type}:${comp.id}`} ancestorIds={ancestorIds} label={comp.type==='section'?'Contenido de la sección':'Contenido de la tarjeta'} onChange={next=>onUpdateConfig('children',next)}/></div>;
+  if(comp.type==='button'&&comp.config.action==='modal')return <div className="nested-builder modal-builder"><div className="nested-builder-head"><span>Canvas del modal</span><small>Todo lo que arrastres aparecerá al abrir el botón</small></div><ComponentDropZone components={(comp.config.modal_components as PageComponent[]|undefined)??[]} tables={tables} forms={forms} views={views} routes={routes} depth={depth} zoneId={`modal:${comp.id}`} ancestorIds={ancestorIds} label="Contenido del modal" onChange={next=>onUpdateConfig('modal_components',next)}/></div>;
   return null;
 }
 
@@ -191,6 +204,7 @@ function insertIntoZone(components:PageComponent[],zoneId:string,moving:PageComp
   if(zoneId==='root')return[...components,moving];
   return components.map(component=>{
     if(zoneId===`card:${component.id}`)return{...component,config:{...component.config,children:[...((component.config.children as PageComponent[]|undefined)??[]),moving]}};
+    if(zoneId===`section:${component.id}`)return{...component,config:{...component.config,children:[...((component.config.children as PageComponent[]|undefined)??[]),moving]}};
     if(zoneId===`modal:${component.id}`)return{...component,config:{...component.config,modal_components:[...((component.config.modal_components as PageComponent[]|undefined)??[]),moving]}};
     if(zoneId.startsWith(`column:${component.id}:`)){const index=Number(zoneId.split(':').at(-1));const count=Math.max(Number(component.config.columns)||2,index+1);const columns=Array.from({length:count},(_,columnIndex)=>((component.config.children as PageComponent[][]|undefined)??[])[columnIndex]??[]);columns[index]=[...columns[index],moving];return{...component,config:{...component.config,children:columns}};}
     if(zoneId.startsWith(`tab:${component.id}:`)){const tabId=zoneId.split(':').at(-1);return{...component,config:{...component.config,tabs:normalizeTabs(component.config.tabs).map(tab=>tab.id===tabId?{...tab,components:[...tab.components,moving]}:tab)}};}
@@ -198,18 +212,19 @@ function insertIntoZone(components:PageComponent[],zoneId:string,moving:PageComp
   });
 }
 
-function componentChildLists(component:PageComponent):PageComponent[][]{if(component.type==='tabs')return normalizeTabs(component.config.tabs).map(tab=>tab.components);if(component.type==='columns')return(component.config.children as PageComponent[][]|undefined)??[];if(component.type==='card')return[(component.config.children as PageComponent[]|undefined)??[]];if(component.type==='button')return[(component.config.modal_components as PageComponent[]|undefined)??[]];return[];}
+function componentChildLists(component:PageComponent):PageComponent[][]{if(component.type==='tabs')return normalizeTabs(component.config.tabs).map(tab=>tab.components);if(component.type==='columns')return(component.config.children as PageComponent[][]|undefined)??[];if(['card','section'].includes(component.type))return[(component.config.children as PageComponent[]|undefined)??[]];if(component.type==='button')return[(component.config.modal_components as PageComponent[]|undefined)??[]];return[];}
 
 function mapChildLists(component:PageComponent,map:(children:PageComponent[])=>PageComponent[]):PageComponent{
   if(component.type==='tabs')return{...component,config:{...component.config,tabs:normalizeTabs(component.config.tabs).map(tab=>({...tab,components:map(tab.components)}))}};
   if(component.type==='columns')return{...component,config:{...component.config,children:((component.config.children as PageComponent[][]|undefined)??[]).map(map)}};
   if(component.type==='card')return{...component,config:{...component.config,children:map((component.config.children as PageComponent[]|undefined)??[])}};
+  if(component.type==='section')return{...component,config:{...component.config,children:map((component.config.children as PageComponent[]|undefined)??[])}};
   if(component.type==='button')return{...component,config:{...component.config,modal_components:map((component.config.modal_components as PageComponent[]|undefined)??[])}};
   return component;
 }
 
 /* ================= Component Editor ================= */
-function ComponentEditor({comp,tables,forms,views,onUpdate,onUpdateConfig}:{comp:PageComponent;tables:string[];forms:BuilderForm[];views:BuilderView[];onUpdate:(p:Partial<PageComponent>)=>void;onUpdateConfig:(k:string,v:unknown)=>void}){
+function ComponentEditor({comp,tables,forms,views,routes,onUpdate,onUpdateConfig}:{comp:PageComponent;tables:string[];forms:BuilderForm[];views:BuilderView[];routes:BuilderRoute[];onUpdate:(p:Partial<PageComponent>)=>void;onUpdateConfig:(k:string,v:unknown)=>void}){
   const [charts,setCharts] = useState<{id:number;name:string}[]>([]);
 
   function loadCharts(){ api.charts().then(r=>setCharts(r.map(c=>({id:c.id,name:c.name})))).catch(()=>{}); }
@@ -267,14 +282,26 @@ function ComponentEditor({comp,tables,forms,views,onUpdate,onUpdateConfig}:{comp
     </>}
 
     {comp.type==='button'&&<>
-      <label className="control"><span>Label</span><input value={(comp.config.label as string)||''} onChange={e=>onUpdateConfig('label',e.target.value)}/></label>
+      <div className="ce-flow-title"><Workflow size={14}/><div><strong>Acción del botón</strong><small>Conecta este botón con otra parte del sistema</small></div></div>
+      <label className="control"><span>Texto del botón</span><input value={(comp.config.label as string)||''} onChange={e=>onUpdateConfig('label',e.target.value)}/></label>
       <label className="control"><span>Variante</span><select value={(comp.config.variant as string)||'primary'} onChange={e=>onUpdateConfig('variant',e.target.value)}>
         <option value="primary">Primary</option><option value="secondary">Secondary</option><option value="ghost">Ghost</option><option value="danger">Danger</option>
       </select></label>
-      <label className="control"><span>Acción</span><select value={(comp.config.action as string)||'modal'} onChange={e=>onUpdateConfig('action',e.target.value)}><option value="modal">Abrir modal</option><option value="url">Ir a una ruta / URL</option><option value="none">Sin acción</option></select></label>
-      {comp.config.action==='url'&&<label className="control"><span>URL</span><input value={(comp.config.url as string)||''} onChange={e=>onUpdateConfig('url',e.target.value)} placeholder="/ruta"/></label>}
+      <label className="control"><span>Al hacer clic</span><select value={(comp.config.action as string)||'modal'} onChange={e=>onUpdateConfig('action',e.target.value)}><option value="modal">Abrir un modal construido aquí</option><option value="route">Ir a otra página del proyecto</option><option value="external">Abrir enlace externo</option><option value="scroll">Desplazarse a un componente</option><option value="component">Mostrar / ocultar componente</option><option value="request">Ejecutar petición HTTP</option><option value="event">Emitir evento personalizado</option><option value="none">Sin acción</option></select></label>
+      {comp.config.action==='route'&&<label className="control"><span>Página destino</span><select value={String(comp.config.route_id??'')} onChange={e=>{const selected=routes.find(route=>route.id===Number(e.target.value));onUpdateConfig('route_id',Number(e.target.value)||null);onUpdateConfig('route_path',selected?routePath(selected,routes):'');}}><option value="">Seleccionar ruta…</option>{routes.filter(route=>route.content_type!=='divider').map(route=><option key={route.id} value={route.id}>{route.name} · {routePath(route,routes)}</option>)}</select></label>}
+      {comp.config.action==='external'&&<><label className="control"><span>URL externa</span><input value={(comp.config.url as string)||''} onChange={e=>onUpdateConfig('url',e.target.value)} placeholder="https://..."/></label><label className="check"><input type="checkbox" checked={comp.config.new_tab!==false} onChange={e=>onUpdateConfig('new_tab',e.target.checked)}/><span>Abrir en pestaña nueva</span></label></>}
+      {['scroll','component'].includes(String(comp.config.action))&&<label className="control"><span>ID del componente destino</span><input value={String(comp.config.target_component_id??'')} onChange={e=>onUpdateConfig('target_component_id',e.target.value)} placeholder="comp_... (visible en la cabecera del bloque)"/></label>}
+      {comp.config.action==='component'&&<label className="control"><span>Control</span><select value={String(comp.config.component_mode??'toggle')} onChange={e=>onUpdateConfig('component_mode',e.target.value)}><option value="toggle">Alternar visible/oculto</option><option value="show">Mostrar</option><option value="hide">Ocultar</option></select></label>}
+      {comp.config.action==='request'&&<><div className="ce-inline-grid"><label className="control"><span>Método</span><select value={String(comp.config.request_method??'POST')} onChange={e=>onUpdateConfig('request_method',e.target.value)}><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select></label><label className="control"><span>Endpoint</span><input value={String(comp.config.request_url??'')} onChange={e=>onUpdateConfig('request_url',e.target.value)} placeholder="/api/mi-accion"/></label></div><label className="control"><span>Body JSON opcional</span><textarea className="ce-code" rows={4} value={String(comp.config.request_body??'{}')} onChange={e=>onUpdateConfig('request_body',e.target.value)} placeholder={'{"status":"activo"}'}/></label><label className="control"><span>Mensaje de confirmación opcional</span><input value={String(comp.config.confirm_message??'')} onChange={e=>onUpdateConfig('confirm_message',e.target.value)} placeholder="¿Ejecutar esta acción?"/></label></>}
+      {comp.config.action==='event'&&<label className="control"><span>Nombre del evento</span><input value={String(comp.config.event_name??'')} onChange={e=>onUpdateConfig('event_name',e.target.value)} placeholder="pedido:aprobado"/></label>}
       {comp.config.action==='modal'&&<><label className="control"><span>Título del modal</span><input value={(comp.config.modal_title as string)||''} onChange={e=>onUpdateConfig('modal_title',e.target.value)} placeholder="Detalle, Nuevo registro…"/></label><p className="ce-builder-note"><Layers size={13}/> El contenido se construye arrastrando componentes en el canvas interno.</p></>}
     </>}
+
+    {comp.type==='hero'&&<><label className="control"><span>Texto superior</span><input value={String(comp.config.eyebrow??'')} onChange={e=>onUpdateConfig('eyebrow',e.target.value)}/></label><label className="control"><span>Título</span><input value={String(comp.config.title??'')} onChange={e=>onUpdateConfig('title',e.target.value)}/></label><label className="control"><span>Descripción</span><textarea rows={3} value={String(comp.config.description??'')} onChange={e=>onUpdateConfig('description',e.target.value)}/></label><div className="ce-inline-grid"><label className="control"><span>Alineación</span><select value={String(comp.config.align??'left')} onChange={e=>onUpdateConfig('align',e.target.value)}><option value="left">Izquierda</option><option value="center">Centro</option></select></label><label className="control"><span>Fondo</span><input type="color" value={String(comp.config.background??'#f5f3ff')} onChange={e=>onUpdateConfig('background',e.target.value)}/></label></div></>}
+    {comp.type==='metric'&&<><div className="ce-inline-grid"><label className="control"><span>Etiqueta</span><input value={String(comp.config.label??'')} onChange={e=>onUpdateConfig('label',e.target.value)}/></label><label className="control"><span>Valor</span><input value={String(comp.config.value??'')} onChange={e=>onUpdateConfig('value',e.target.value)}/></label></div><label className="control"><span>Texto auxiliar</span><input value={String(comp.config.helper??'')} onChange={e=>onUpdateConfig('helper',e.target.value)}/></label><label className="control"><span>Color</span><input type="color" value={String(comp.config.color??'#6366f1')} onChange={e=>onUpdateConfig('color',e.target.value)}/></label></>}
+    {comp.type==='progress'&&<><label className="control"><span>Etiqueta</span><input value={String(comp.config.label??'')} onChange={e=>onUpdateConfig('label',e.target.value)}/></label><div className="ce-inline-grid"><label className="control"><span>Avance %</span><input type="number" min={0} max={100} value={Number(comp.config.value)||0} onChange={e=>onUpdateConfig('value',Math.max(0,Math.min(100,Number(e.target.value))))}/></label><label className="control"><span>Color</span><input type="color" value={String(comp.config.color??'#22c55e')} onChange={e=>onUpdateConfig('color',e.target.value)}/></label></div></>}
+    {comp.type==='video'&&<><label className="control"><span>URL del video</span><input value={String(comp.config.src??'')} onChange={e=>onUpdateConfig('src',e.target.value)} placeholder="YouTube, Vimeo o MP4"/></label><label className="control"><span>Título accesible</span><input value={String(comp.config.title??'')} onChange={e=>onUpdateConfig('title',e.target.value)}/></label></>}
+    {comp.type==='accordion'&&<AccordionEditor items={normalizeAccordion(comp.config.items)} onChange={items=>onUpdateConfig('items',items)}/>}
 
     {comp.type==='divider'&&<label className="control"><span>Estilo</span><select value={(comp.config.style as string)||'solid'} onChange={e=>onUpdateConfig('style',e.target.value)}>
       <option value="solid">Sólido</option><option value="dashed">Guiones</option><option value="dotted">Puntos</option>
@@ -306,39 +333,62 @@ function ComponentEditor({comp,tables,forms,views,onUpdate,onUpdateConfig}:{comp
         <option value="">Seleccionar…</option>{tables.map(t=><option key={t} value={t}>{t}</option>)}
       </select></label>
       <label className="control"><span>Campo de display</span><input value={(comp.config.display_field as string)||''} onChange={e=>onUpdateConfig('display_field',e.target.value)} placeholder="nombre"/></label>
+      <label className="control"><span>Máximo de elementos</span><input type="number" min={1} max={50} value={Number(comp.config.limit)||6} onChange={e=>onUpdateConfig('limit',Math.max(1,Math.min(50,Number(e.target.value))))}/></label>
       <label className="check"><input type="checkbox" checked={!!comp.config.show_title} onChange={e=>onUpdateConfig('show_title',e.target.checked)}/><span>Mostrar título</span></label>
     </>}
 
     {comp.type==='tabs'&&<p className="ce-builder-note"><LayoutList size={13}/> Cada pestaña es un canvas independiente. Activa una pestaña y arrastra dentro cualquier componente.</p>}
     {comp.type==='columns'&&<div className="ce-inline-grid"><label className="control"><span>Columnas</span><select value={Number(comp.config.columns)||2} onChange={e=>{const count=Number(e.target.value);const current=(comp.config.children as PageComponent[][]|undefined)??[];onUpdateConfig('columns',count);onUpdateConfig('children',Array.from({length:count},(_,index)=>current[index]??[]));}}><option value={1}>1 columna</option><option value={2}>2 columnas</option><option value={3}>3 columnas</option><option value={4}>4 columnas</option></select></label><label className="control"><span>Separación</span><select value={Number(comp.config.gap)||12} onChange={e=>onUpdateConfig('gap',Number(e.target.value))}><option value={6}>Compacta</option><option value={12}>Normal</option><option value={20}>Amplia</option></select></label></div>}
     {comp.type==='card'&&<><div className="ce-inline-grid"><label className="control"><span>Título</span><input value={String(comp.config.title??'')} onChange={e=>onUpdateConfig('title',e.target.value)} placeholder="Título de la tarjeta"/></label><label className="control"><span>Subtítulo</span><input value={String(comp.config.subtitle??'')} onChange={e=>onUpdateConfig('subtitle',e.target.value)} placeholder="Descripción breve"/></label></div><p className="ce-builder-note"><CreditCard size={13}/> Arrastra cualquier composición al canvas de la tarjeta.</p></>}
+    {comp.type==='section'&&<><div className="ce-inline-grid"><label className="control"><span>Título</span><input value={String(comp.config.title??'')} onChange={e=>onUpdateConfig('title',e.target.value)}/></label><label className="control"><span>Estilo</span><select value={String(comp.config.tone??'plain')} onChange={e=>onUpdateConfig('tone',e.target.value)}><option value="plain">Simple</option><option value="soft">Fondo suave</option><option value="accent">Destacada</option></select></label></div><label className="control"><span>Subtítulo</span><input value={String(comp.config.subtitle??'')} onChange={e=>onUpdateConfig('subtitle',e.target.value)}/></label><p className="ce-builder-note"><PanelTop size={13}/> Esta sección es un canvas: arrastra dentro cualquier bloque.</p></>}
+
+    {!['button','spacer'].includes(comp.type)&&<label className="check ce-visibility"><input type="checkbox" checked={!!comp.config.initially_hidden} onChange={e=>onUpdateConfig('initially_hidden',e.target.checked)}/><span>Iniciar oculto (otro botón puede mostrarlo)</span></label>}
   </div>;
 }
 
+function routePath(route:BuilderRoute,routes:BuilderRoute[]):string{const byId=new Map(routes.map(item=>[item.id,item]));const parts=[route.slug];let parent=route.parent_id?byId.get(route.parent_id):undefined;while(parent){parts.unshift(parent.slug);parent=parent.parent_id?byId.get(parent.parent_id):undefined;}return'/'+parts.join('/');}
+function buttonActionLabel(action:string):string{return({modal:'Abre modal',route:'Cambia de página',external:'Abre enlace',scroll:'Desplaza',component:'Controla bloque',request:'Ejecuta HTTP',event:'Emite evento',url:'Abre ruta'} as Record<string,string>)[action]||'Sin acción';}
+function normalizeAccordion(value:unknown):{title:string;content:string}[]{return Array.isArray(value)?value.map(item=>({title:String((item as Record<string,unknown>).title??''),content:String((item as Record<string,unknown>).content??'')})):[{title:'Sección',content:'Contenido'}];}
+function AccordionEditor({items,onChange}:{items:{title:string;content:string}[];onChange:(items:{title:string;content:string}[])=>void}){return <div className="ce-accordion-editor"><div className="ce-flow-title"><ChevronDown size={14}/><div><strong>Secciones</strong><small>Contenido desplegable</small></div></div>{items.map((item,index)=><div key={index}><input value={item.title} onChange={e=>onChange(items.map((current,i)=>i===index?{...current,title:e.target.value}:current))}/><textarea rows={2} value={item.content} onChange={e=>onChange(items.map((current,i)=>i===index?{...current,content:e.target.value}:current))}/><button className="danger" disabled={items.length===1} onClick={()=>onChange(items.filter((_,i)=>i!==index))}><Trash2 size={12}/>Eliminar</button></div>)}<button onClick={()=>onChange([...items,{title:`Sección ${items.length+1}`,content:''}])}><Plus size={12}/>Agregar sección</button></div>;}
+
 /* ================= Preview Renderer ================= */
 export function renderComponents(components:PageComponent[],forms:BuilderForm[]=[],views:BuilderView[]=[]):React.ReactNode{
-  return components.map(comp=>{
+  return components.map(comp=><RuntimeComponent key={comp.id} comp={comp} forms={forms} views={views}/>);
+}
+
+function RuntimeComponent({comp,forms,views}:{comp:PageComponent;forms:BuilderForm[];views:BuilderView[]}){
+  const [visible,setVisible]=useState(!comp.config.initially_hidden);
+  useEffect(()=>{const handler=(event:Event)=>{const detail=(event as CustomEvent<{id:string;mode:'show'|'hide'|'toggle'}>).detail;if(detail?.id!==comp.id)return;setVisible(current=>detail.mode==='show'?true:detail.mode==='hide'?false:!current);};window.addEventListener('nexodb:component',handler);return()=>window.removeEventListener('nexodb:component',handler);},[comp.id]);
+  if(!visible)return null;
+  const content=(()=>{
     switch(comp.type){
-      case 'form': return <SavedFormRuntime key={comp.id} form={forms.find(form=>form.id===Number(comp.config.form_id))} title={comp.config.show_title===false?'':String(comp.config.title||comp.label)}/>;
-      case 'table': return <SavedViewRuntime key={comp.id} view={views.find(view=>view.id===Number(comp.config.view_id))} forms={forms} title={comp.config.show_title===false?'':String(comp.config.title||comp.label)}/>;
-      case 'chart': return <ChartRuntime key={comp.id} chartId={Number(comp.config.chart_id)} title={String(comp.config.title||comp.label)}/>;
-      case 'text': return <p key={comp.id} className="preview-comp preview-text" style={{textAlign:(comp.config.align as React.CSSProperties['textAlign'])||'left',fontSize:comp.config.size==='sm'?'13px':comp.config.size==='lg'?'18px':comp.config.size==='xl'?'24px':'15px'}}>{comp.config.content as string}</p>;
-      case 'heading': return <div key={comp.id} className="preview-comp">{comp.config.level==='h1'?<h1>{comp.config.text as string}</h1>:comp.config.level==='h3'?<h3>{comp.config.text as string}</h3>:comp.config.level==='h4'?<h4>{comp.config.text as string}</h4>:<h2>{comp.config.text as string}</h2>}</div>;
-      case 'image': return <div key={comp.id} className="preview-comp preview-image"><img src={comp.config.src as string} alt={comp.config.alt as string} style={{width:comp.config.width as string}}/></div>;
-      case 'button': return <ActionButtonRuntime key={comp.id} component={comp} forms={forms} views={views}/>;
-      case 'divider': return <hr key={comp.id} className="preview-comp preview-divider" style={{borderStyle:(comp.config.style as string)||'solid'}}/>;
-      case 'spacer': return <div key={comp.id} className="preview-comp" style={{height:comp.config.height as number}}/>;
-      case 'code': return <div key={comp.id} className="preview-comp preview-code"><pre><code>{comp.config.code as string}</code></pre></div>;
-      case 'alert': return <div key={comp.id} className={`preview-comp preview-alert alert-${comp.config.type||'info'}`}>{comp.config.message as string}</div>;
-      case 'badge': return <div key={comp.id} className="preview-comp"><span className="preview-badge-demo" style={{background:comp.config.color as string}}>{comp.config.label as string}</span></div>;
-      case 'list': return <div key={comp.id} className="preview-comp preview-list"><div className="preview-comp-header"><ListOrdered size={16}/><span>{comp.label}</span></div><div className="preview-list-placeholder"><p>Lista → <code>{(comp.config.table_name as string)||'sin tabla'}</code></p></div></div>;
-      case 'tabs': return <TabsRuntime key={comp.id} tabs={normalizeTabs(comp.config.tabs)} forms={forms} views={views}/>;
-      case 'columns': {const count=Math.max(1,Math.min(4,Number(comp.config.columns)||2));const children=(comp.config.children as PageComponent[][]|undefined)??[];return <div key={comp.id} className="preview-comp preview-cols" style={{gridTemplateColumns:`repeat(${count},minmax(0,1fr))`,gap:Number(comp.config.gap)||12}}>{Array.from({length:count},(_,i)=><div key={i} className="preview-col runtime-container">{children[i]?.length?renderComponents(children[i],forms,views):<span className="runtime-empty-container">Columna vacía</span>}</div>)}</div>;}
-      case 'card': {const children=(comp.config.children as PageComponent[]|undefined)??[];return <div key={comp.id} className="preview-comp preview-card"><div className="preview-card-header"><strong>{String(comp.config.title||'Tarjeta')}</strong>{Boolean(comp.config.subtitle)&&<small>{String(comp.config.subtitle)}</small>}</div><div className="preview-card-body">{children.length?renderComponents(children,forms,views):<span className="runtime-empty-container">Tarjeta vacía</span>}</div></div>;}
-      case 'table_detail': return <div key={comp.id} className="preview-comp preview-table-detail"><div className="preview-comp-header"><Table2 size={16}/><span>{comp.label}</span></div><div className="preview-detail-placeholder"><p>Detalle de tabla → <code>{(comp.config.table_name as string)||'sin tabla'}</code></p></div></div>;
-      default: return <div key={comp.id} className="preview-comp preview-unknown"><FileText size={16}/><span>{comp.label}</span></div>;
+      case 'form': return <SavedFormRuntime form={forms.find(form=>form.id===Number(comp.config.form_id))} title={comp.config.show_title===false?'':String(comp.config.title||comp.label)}/>;
+      case 'table': return <SavedViewRuntime view={views.find(view=>view.id===Number(comp.config.view_id))} forms={forms} title={comp.config.show_title===false?'':String(comp.config.title||comp.label)}/>;
+      case 'chart': return <ChartRuntime chartId={Number(comp.config.chart_id)} title={String(comp.config.title||comp.label)}/>;
+      case 'text': return <p className="preview-comp preview-text" style={{textAlign:(comp.config.align as React.CSSProperties['textAlign'])||'left',fontSize:comp.config.size==='sm'?'13px':comp.config.size==='lg'?'18px':comp.config.size==='xl'?'24px':'15px'}}>{comp.config.content as string}</p>;
+      case 'heading': return <div className="preview-comp">{comp.config.level==='h1'?<h1>{comp.config.text as string}</h1>:comp.config.level==='h3'?<h3>{comp.config.text as string}</h3>:comp.config.level==='h4'?<h4>{comp.config.text as string}</h4>:<h2>{comp.config.text as string}</h2>}</div>;
+      case 'image': return <div className="preview-comp preview-image"><img src={comp.config.src as string} alt={comp.config.alt as string} style={{width:comp.config.width as string}}/></div>;
+      case 'button': return <ActionButtonRuntime component={comp} forms={forms} views={views}/>;
+      case 'divider': return <hr className="preview-comp preview-divider" style={{borderStyle:(comp.config.style as string)||'solid'}}/>;
+      case 'spacer': return <div className="preview-comp" style={{height:comp.config.height as number}}/>;
+      case 'code': return <div className="preview-comp preview-code"><pre><code>{comp.config.code as string}</code></pre></div>;
+      case 'alert': return <div className={`preview-comp preview-alert alert-${comp.config.type||'info'}`}>{comp.config.message as string}</div>;
+      case 'badge': return <div className="preview-comp"><span className="preview-badge-demo" style={{background:comp.config.color as string}}>{comp.config.label as string}</span></div>;
+      case 'list': return <ListRuntime table={String(comp.config.table_name||'')} displayField={String(comp.config.display_field||'')} title={String(comp.config.title||comp.label)} limit={Number(comp.config.limit)||6}/>;
+      case 'tabs': return <TabsRuntime tabs={normalizeTabs(comp.config.tabs)} forms={forms} views={views}/>;
+      case 'columns': {const count=Math.max(1,Math.min(4,Number(comp.config.columns)||2));const children=(comp.config.children as PageComponent[][]|undefined)??[];return <div className="preview-comp preview-cols" style={{gridTemplateColumns:`repeat(${count},minmax(0,1fr))`,gap:Number(comp.config.gap)||12}}>{Array.from({length:count},(_,i)=><div key={i} className="preview-col runtime-container">{children[i]?.length?renderComponents(children[i],forms,views):<span className="runtime-empty-container">Columna vacía</span>}</div>)}</div>;}
+      case 'card': {const children=(comp.config.children as PageComponent[]|undefined)??[];return <div className="preview-comp preview-card"><div className="preview-card-header"><strong>{String(comp.config.title||'Tarjeta')}</strong>{Boolean(comp.config.subtitle)&&<small>{String(comp.config.subtitle)}</small>}</div><div className="preview-card-body">{children.length?renderComponents(children,forms,views):<span className="runtime-empty-container">Tarjeta vacía</span>}</div></div>;}
+      case 'section': {const children=(comp.config.children as PageComponent[]|undefined)??[];return <section className={`preview-comp runtime-section tone-${comp.config.tone||'plain'}`} style={{padding:Number(comp.config.padding)||24}}><header><h2>{String(comp.config.title||'')}</h2>{Boolean(comp.config.subtitle)&&<p>{String(comp.config.subtitle)}</p>}</header><div>{children.length?renderComponents(children,forms,views):<span className="runtime-empty-container">Sección vacía</span>}</div></section>;}
+      case 'hero': return <section className="preview-comp runtime-hero" style={{textAlign:(comp.config.align as React.CSSProperties['textAlign'])||'left',background:String(comp.config.background||'#f5f3ff')}}><span>{String(comp.config.eyebrow||'')}</span><h1>{String(comp.config.title||'')}</h1><p>{String(comp.config.description||'')}</p></section>;
+      case 'metric': return <div className="preview-comp runtime-metric" style={{borderTopColor:String(comp.config.color||'#6366f1')}}><span>{String(comp.config.label||'Indicador')}</span><strong>{String(comp.config.value??'0')}</strong><small>{String(comp.config.helper||'')}</small></div>;
+      case 'progress': {const value=Math.max(0,Math.min(100,Number(comp.config.value)||0));return <div className="preview-comp runtime-progress"><div><span>{String(comp.config.label||'Progreso')}</span><strong>{value}%</strong></div><i><b style={{width:`${value}%`,background:String(comp.config.color||'#22c55e')}}/></i></div>;}
+      case 'accordion': return <AccordionRuntime items={normalizeAccordion(comp.config.items)}/>;
+      case 'video': return <VideoRuntime src={String(comp.config.src||'')} title={String(comp.config.title||'Video')}/>;
+      case 'table_detail': return <div className="preview-comp preview-table-detail"><div className="preview-comp-header"><Table2 size={16}/><span>{comp.label}</span></div><div className="preview-detail-placeholder"><p>Detalle de tabla → <code>{(comp.config.table_name as string)||'sin tabla'}</code></p></div></div>;
+      default: return <div className="preview-comp preview-unknown"><FileText size={16}/><span>{comp.label}</span></div>;
     }
-  });
+  })();
+  return <div className="runtime-node" data-nexo-component={comp.id}>{content}</div>;
 }
 
 function SavedFormRuntime({form,title,initialValues={},rowId,onSaved}:{form?:BuilderForm;title?:string;initialValues?:Record<string,unknown>;rowId?:number;onSaved?:()=>void}){
@@ -365,6 +415,8 @@ function ChartRuntime({chartId,title}:{chartId:number;title:string}){
   return <section className="runtime-chart preview-comp"><div className="runtime-component-title"><BarChart3 size={16}/><div><strong>{title}</strong><small>{result.chart.chart_type}</small></div></div><div className="runtime-chart-bars">{result.data.map((item,index)=><div key={`${item.label}-${index}`}><span>{item.label}</span><i><b style={{width:`${Math.max(3,item.value/max*100)}%`,background:result.chart.color}}/></i><strong>{item.value}</strong></div>)}</div></section>;
 }
 
+function ListRuntime({table,displayField,title,limit}:{table:string;displayField:string;title:string;limit:number}){const [rows,setRows]=useState<Record<string,unknown>[]>([]);const [loading,setLoading]=useState(false);const [error,setError]=useState('');useEffect(()=>{if(!table)return;setLoading(true);api.browse(table).then(page=>setRows(page.data.slice(0,limit))).catch(err=>setError(err instanceof Error?err.message:'No se pudo cargar la lista.')).finally(()=>setLoading(false));},[table,limit]);if(!table||!displayField)return <MissingComponent icon={ListOrdered} text="Selecciona tabla y campo para la lista"/>;return <section className="preview-comp runtime-list"><div className="runtime-component-title"><ListOrdered size={16}/><div><strong>{title}</strong><small>{table}</small></div></div>{loading?<div className="runtime-chart-loading"><LoaderCircle className="spin" size={16}/>Cargando…</div>:error?<div className="runtime-feedback error">{error}</div>:<ul>{rows.map((row,index)=><li key={String(row.id??index)}><span>{String(row[displayField]??'—')}</span><small>#{String(row.id??index+1)}</small></li>)}</ul>}</section>;}
+
 function RuntimeField({field,value,error,onChange}:{field:BuilderFormField;value:unknown;error?:string;onChange:(value:unknown)=>void}){
   const [remote,setRemote]=useState<{value:string|number;label:string}[]>([]);
   const relation=field.config?.options_source==='relation'; const relationTable=String(field.config?.relation_table??''); const valueColumn=String(field.config?.relation_value_column??'id'); const labelColumn=String(field.config?.relation_label_column??'');
@@ -387,11 +439,26 @@ function SavedViewRuntime({view,forms,title}:{view?:BuilderView;forms:BuilderFor
 }
 
 function ActionButtonRuntime({component,forms,views}:{component:PageComponent;forms:BuilderForm[];views:BuilderView[]}){
-  const [open,setOpen]=useState(false); const action=String(component.config.action??'none');
-  const click=()=>{if(action==='modal')setOpen(true);else if(action==='url'&&component.config.url)window.location.hash=String(component.config.url);};
+  const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false); const [message,setMessage]=useState<{type:'success'|'error';text:string}|null>(null); const action=String(component.config.action??'none');
+  async function click(){
+    setMessage(null);
+    if(action==='modal'){setOpen(true);return;}
+    if(action==='route'||action==='url'&&String(component.config.url||'').startsWith('/')){const path=String(component.config.route_path||component.config.url||'');if(path||component.config.route_id)window.dispatchEvent(new CustomEvent('nexodb:navigate',{detail:{path,routeId:Number(component.config.route_id)||null}}));return;}
+    if(action==='external'||action==='url'){const url=String(component.config.url||'');if(url)window.open(url,component.config.new_tab===false?'_self':'_blank','noopener,noreferrer');return;}
+    if(action==='scroll'){const target=String(component.config.target_component_id||'');Array.from(document.querySelectorAll<HTMLElement>('[data-nexo-component]')).find(node=>node.dataset.nexoComponent===target)?.scrollIntoView({behavior:'smooth',block:'center'});return;}
+    if(action==='component'){window.dispatchEvent(new CustomEvent('nexodb:component',{detail:{id:String(component.config.target_component_id||''),mode:String(component.config.component_mode||'toggle')}}));return;}
+    if(action==='event'){window.dispatchEvent(new CustomEvent(String(component.config.event_name||'nexodb:action'),{detail:{componentId:component.id}}));return;}
+    if(action==='request'){
+      const confirmation=String(component.config.confirm_message||'');if(confirmation&&!window.confirm(confirmation))return;
+      setBusy(true);try{const method=String(component.config.request_method||'POST');const raw=String(component.config.request_body||'').trim();const response=await fetch(String(component.config.request_url||''),{method,headers:{Accept:'application/json',...(method==='GET'?{}:{'Content-Type':'application/json'})},body:method==='GET'||method==='DELETE'?undefined:(raw||'{}')});if(!response.ok)throw new Error(`La petición respondió ${response.status}`);setMessage({type:'success',text:String(component.config.success_message||'Acción ejecutada correctamente.')});window.dispatchEvent(new CustomEvent('nexodb:request-success',{detail:{componentId:component.id,status:response.status}}));}catch(error){setMessage({type:'error',text:error instanceof Error?error.message:'No se pudo ejecutar la petición.'});}finally{setBusy(false);}
+    }
+  }
   const modalComponents=(component.config.modal_components as PageComponent[]|undefined)??legacyModalComponents(component);
-  return <div className="preview-comp runtime-button"><button className={`button ${component.config.variant||'primary'}`} onClick={click}>{String(component.config.label||component.label)}</button>{open&&<div className="runtime-modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setOpen(false)}><section className="runtime-modal"><header><div><span>Componente del proyecto</span><h2>{String(component.config.modal_title||component.config.label||component.label)}</h2></div><button onClick={()=>setOpen(false)}><X size={18}/></button></header><div className="runtime-modal-body">{modalComponents.length?renderComponents(modalComponents,forms,views):<MissingComponent icon={Layers} text="El modal todavía no tiene componentes"/>}</div></section></div>}</div>;
+  return <div className="preview-comp runtime-button-flow"><div className="runtime-button"><button className={`button ${component.config.variant||'primary'}`} disabled={busy} onClick={()=>void click()}>{busy?<><LoaderCircle className="spin" size={14}/>Ejecutando…</>:String(component.config.label||component.label)}</button></div>{message&&<div className={`runtime-feedback ${message.type}`}>{message.text}</div>}{open&&<div className="runtime-modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setOpen(false)}><section className="runtime-modal"><header><div><span>Flujo del proyecto</span><h2>{String(component.config.modal_title||component.config.label||component.label)}</h2></div><button onClick={()=>setOpen(false)}><X size={18}/></button></header><div className="runtime-modal-body">{modalComponents.length?renderComponents(modalComponents,forms,views):<MissingComponent icon={Layers} text="El modal todavía no tiene componentes"/>}</div></section></div>}</div>;
 }
+
+function AccordionRuntime({items}:{items:{title:string;content:string}[]}){const [open,setOpen]=useState(0);return <section className="preview-comp runtime-accordion">{items.map((item,index)=><article key={index} className={open===index?'open':''}><button onClick={()=>setOpen(open===index?-1:index)}><span>{item.title}</span><ChevronDown size={15}/></button>{open===index&&<p>{item.content}</p>}</article>)}</section>;}
+function VideoRuntime({src,title}:{src:string;title:string}){if(!src)return <MissingComponent icon={Play} text="Agrega una URL de video"/>;const youtube=src.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/))([^&?/]+)/)?.[1];return <div className="preview-comp runtime-video">{youtube?<iframe src={`https://www.youtube.com/embed/${youtube}`} title={title} allowFullScreen/>:<video src={src} controls aria-label={title}/>}</div>;}
 
 function TabsRuntime({tabs,forms,views}:{tabs:TabConfig[];forms:BuilderForm[];views:BuilderView[]}){
   const [active,setActive]=useState(0); const tab=tabs[active];

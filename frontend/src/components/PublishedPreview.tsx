@@ -43,6 +43,8 @@ export function PublishedPreview() {
     return () => setPreviewMode(null);
   }, [projectId]);
 
+  useEffect(()=>{const navigate=(event:Event)=>{const detail=(event as CustomEvent<{path?:string;routeId?:number|null}>).detail;const target=detail?.routeId?paths[detail.routeId]:detail?.path;if(target&&Object.values(paths).includes(target))setActivePath(target);};window.addEventListener('nexodb:navigate',navigate);return()=>window.removeEventListener('nexodb:navigate',navigate);},[paths]);
+
   function buildNav(items: BuilderRoute[], depth = 0) {
     return <ul className="preview-nav-list" style={{ paddingLeft: depth * 16 }}>
       {items.filter((r) => r.visible_in_menu && r.active).map((r) => <li key={r.id}>
@@ -71,6 +73,7 @@ export function PublishedPreview() {
     switch (route.content_type) {
       case 'table': return <div className="preview-content"><h2>{route.name}</h2>{renderComponents([{ id: `route-view-${route.id}`, type: 'table', label: route.name, config: { view_id: route.content_config?.view_id, show_title: false } }], forms, views)}</div>;
       case 'form': return <div className="preview-content"><h2>{route.name}</h2>{renderComponents([{ id: `route-form-${route.id}`, type: 'form', label: route.name, config: { form_id: route.content_config?.form_id, show_title: false } }], forms, views)}</div>;
+      case 'chart': return <div className="preview-content"><h2>{route.name}</h2>{renderComponents([{ id: `route-chart-${route.id}`, type: 'chart', label: route.name, config: { chart_id: route.content_config?.chart_id, title: route.name } }], forms, views)}</div>;
       case 'divider': return <hr className="preview-divider"/>;
       default: return <div className="preview-content preview-empty-state"><Layout size={48}/><h2>{route.name}</h2></div>;
     }

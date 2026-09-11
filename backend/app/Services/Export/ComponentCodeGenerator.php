@@ -11,7 +11,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
- * Translates a PageComponent tree (frontend/src/components/ComponentPalette.tsx's 18 types) into real,
+ * Translates a PageComponent tree into real,
  * static JSX — not a runtime interpreter. Container types (columns/card/tabs/button-modal) recurse for real.
  */
 class ComponentCodeGenerator
@@ -52,7 +52,7 @@ class ComponentCodeGenerator
         $config = is_array($comp['config'] ?? null) ? $comp['config'] : [];
         $label = (string) ($comp['label'] ?? '');
 
-        return match ($type) {
+        $rendered = match ($type) {
             'text' => $this->text($config),
             'heading' => $this->heading($config),
             'image' => $this->image($config),
@@ -69,9 +69,19 @@ class ComponentCodeGenerator
             'button' => $this->button($config, $label),
             'columns' => $this->columns($config),
             'card' => $this->card($config),
+            'section' => $this->section($config),
             'tabs' => $this->tabs($config),
+            'hero' => $this->hero($config),
+            'metric' => $this->metric($config),
+            'progress' => $this->progress($config),
+            'accordion' => $this->accordion($config),
+            'video' => $this->video($config),
             default => '<div>{'.$this->js($label).'}</div>',
         };
+        $id = $this->js($comp['id'] ?? '');
+        $hidden = ($config['initially_hidden'] ?? false) ? ' hidden' : '';
+
+        return "<div data-nexo-component={{$id}}{$hidden}>{$rendered}</div>";
     }
 
     private function text(array $c): string
@@ -232,8 +242,65 @@ class ComponentCodeGenerator
         $action = $c['action'] ?? 'none';
         $className = $this->js('button '.($variant === 'primary' ? '' : $variant));
 
-        if ($action === 'url') {
-            return '<Link to='.$this->js($c['url'] ?? '/')." className={{$className}}>{{$text}}</Link>";
+        if (in_array($action, ['url', 'route'], true)) {
+            $target = $action === 'route' ? ($c['route_path'] ?? '/') : ($c['url'] ?? '/');
+
+            return '<Link to='.$this->js($target)." className={{$className}}>{{$text}}</Link>";
+        }
+
+        if ($action === 'external') {
+            $target = $this->js($c['url'] ?? '#');
+            $newTab = ($c['new_tab'] ?? true) !== false ? ' target="_blank" rel="noreferrer"' : '';
+
+            return "<a href={{$target}}{$newTab} className={{$className}}>{{$text}}</a>";
+        }
+
+        if ($action === 'scroll') {
+            $target = $this->js($c['target_component_id'] ?? '');
+
+            return "<button className={{$className}} onClick={() => Array.from(document.querySelectorAll<HTMLElement>('[data-nexo-component]')).find(el => el.dataset.nexoComponent === {$target})?.scrollIntoView({behavior:'smooth'})}>{{$text}}</button>";
+        }
+
+        if ($action === 'component') {
+            $target = $this->js($c['target_component_id'] ?? '');
+            $mode = $this->js($c['component_mode'] ?? 'toggle');
+
+            return "<button className={{$className}} onClick={() => { const el=Array.from(document.querySelectorAll<HTMLElement>('[data-nexo-component]')).find(node => node.dataset.nexoComponent === {$target}); if(el){ const mode={$mode}; el.hidden=mode==='show'?false:mode==='hide'?true:!el.hidden; } }}>{{$text}}</button>";
+        }
+
+        if ($action === 'event') {
+            $event = $this->js($c['event_name'] ?? 'nexodb:action');
+
+            return "<button className={{$className}} onClick={() => window.dispatchEvent(new CustomEvent({$event}))}>{{$text}}</button>";
+        }
+
+        if ($action === 'request') {
+            $name = 'RequestButton'.(++$this->modalCounter).'_'.Str::random(4);
+            $method = $this->js($c['request_method'] ?? 'POST');
+            $url = $this->js($c['request_url'] ?? '');
+            $body = $this->js($c['request_body'] ?? '{}');
+            $confirmation = $this->js($c['confirm_message'] ?? '');
+            $this->extraComponents[] = <<<TSX
+function {$name}() {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  async function run() {
+    const confirmation = {$confirmation};
+    if (confirmation && !window.confirm(confirmation)) return;
+    setBusy(true); setMessage('');
+    try {
+      const method = {$method};
+      const response = await fetch({$url}, {method, headers:{'Content-Type':'application/json', Accept:'application/json'}, body:['GET','DELETE'].includes(method) ? undefined : {$body}});
+      if (!response.ok) throw new Error(`HTTP \${response.status}`);
+      setMessage('Acción ejecutada correctamente.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'No se pudo ejecutar.'); }
+    finally { setBusy(false); }
+  }
+  return <div><button className={{$className}} disabled={busy} onClick={run}>{busy ? 'Ejecutando…' : {$text}}</button>{message && <small>{message}</small>}</div>;
+}
+TSX;
+
+            return "<{$name} />";
         }
 
         if ($action === 'modal') {
@@ -291,6 +358,60 @@ TSX;
         $children = is_array($c['children'] ?? null) ? $c['children'] : [];
 
         return "<div className=\"panel\"><div><strong>{{$title}}</strong>{$subtitle}</div><div>".$this->renderTree($children).'</div></div>';
+    }
+
+    private function section(array $c): string
+    {
+        $title = $this->js($c['title'] ?? '');
+        $subtitle = $this->js($c['subtitle'] ?? '');
+        $padding = max(0, min(80, (int) ($c['padding'] ?? 24)));
+        $children = is_array($c['children'] ?? null) ? $c['children'] : [];
+
+        return "<section className=\"panel\" style={{padding:{$padding}}}><h2>{{$title}}</h2><p>{{$subtitle}}</p>".$this->renderTree($children).'</section>';
+    }
+
+    private function hero(array $c): string
+    {
+        $background = $this->js($c['background'] ?? '#f5f3ff');
+        $align = $this->js($c['align'] ?? 'left');
+
+        return '<section className="panel" style={{padding:40, background:'.$background.', textAlign:'.$align.'}}><small>{'.$this->js($c['eyebrow'] ?? '').'}</small><h1>{'.$this->js($c['title'] ?? '').'}</h1><p>{'.$this->js($c['description'] ?? '').'}</p></section>';
+    }
+
+    private function metric(array $c): string
+    {
+        return '<div className="panel"><small>{'.$this->js($c['label'] ?? '').'}</small><h2>{'.$this->js($c['value'] ?? '0').'} </h2><span>{'.$this->js($c['helper'] ?? '').'}</span></div>';
+    }
+
+    private function progress(array $c): string
+    {
+        $value = max(0, min(100, (int) ($c['value'] ?? 0)));
+        $color = $this->js($c['color'] ?? '#22c55e');
+
+        return '<div><div style={{display:"flex",justifyContent:"space-between"}}><span>{'.$this->js($c['label'] ?? 'Progreso')."}</span><strong>{$value}%</strong></div><div style={{height:8,background:'#edf0f4',borderRadius:99}}><div style={{height:'100%',width:'{$value}%',background:{$color},borderRadius:99}} /></div></div>";
+    }
+
+    private function video(array $c): string
+    {
+        $src = $this->js($c['src'] ?? '');
+        $title = $this->js($c['title'] ?? 'Video');
+
+        return "<video src={{$src}} aria-label={{$title}} controls style={{width:'100%',aspectRatio:'16/9',background:'#111827',borderRadius:12}} />";
+    }
+
+    private function accordion(array $c): string
+    {
+        $items = json_encode(array_values(is_array($c['items'] ?? null) ? $c['items'] : []), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $name = 'Accordion'.(++$this->modalCounter).'_'.Str::random(4);
+        $this->extraComponents[] = <<<TSX
+function {$name}() {
+  const [open, setOpen] = useState(0);
+  const items = {$items};
+  return <div className="panel">{items.map((item, index) => <div key={index}><button className="secondary" onClick={() => setOpen(open === index ? -1 : index)}>{item.title}</button>{open === index && <p>{item.content}</p>}</div>)}</div>;
+}
+TSX;
+
+        return "<{$name} />";
     }
 
     private function tabs(array $c): string

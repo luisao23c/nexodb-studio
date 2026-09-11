@@ -79,7 +79,7 @@ class ProjectReferenceAnalyzer
                 }
             }
 
-            if ($type === 'card' && is_array($config['children'] ?? null)) {
+            if (in_array($type, ['card', 'section'], true) && is_array($config['children'] ?? null)) {
                 $names = $names->merge($this->tableNamesInComponents($config['children']));
             }
 
