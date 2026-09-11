@@ -10,20 +10,22 @@ use Illuminate\Support\Str;
 
 class PageController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        return response()->json(BuilderPage::orderBy('name')->get(['id', 'name', 'slug', 'description', 'active', 'created_at']));
+        return response()->json($request->project()->pages()->orderBy('name')->get(['id', 'name', 'slug', 'description', 'active', 'created_at']));
     }
 
     public function show(BuilderPage $page): JsonResponse
     {
-        return response()->json($page);
+        return response()->json($page)
+            ->header('X-Content-Type-Options', 'nosniff')
+            ->header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src * data:; frame-ancestors 'self'");
     }
 
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate(['name' => 'required|string|max:80', 'description' => 'nullable|string|max:255', 'code' => 'nullable|string|max:60000']);
-        $page = BuilderPage::create([
+        $page = $request->project()->pages()->create([
             'name' => $data['name'], 'slug' => Str::slug($data['name']),
             'description' => $data['description'] ?? null, 'code' => $data['code'] ?? $this->starterCode($data['name']),
         ]);
@@ -33,14 +35,16 @@ class PageController extends Controller
 
     public function update(Request $request, BuilderPage $page): JsonResponse
     {
+        abort_unless($page->project_id === $request->project()->id, 404);
         $data = $request->validate(['name' => 'sometimes|string|max:80', 'description' => 'nullable|string|max:255', 'code' => 'nullable|string|max:60000', 'active' => 'boolean']);
         $page->update($data);
 
         return response()->json($page->fresh());
     }
 
-    public function destroy(BuilderPage $page): JsonResponse
+    public function destroy(Request $request, BuilderPage $page): JsonResponse
     {
+        abort_unless($page->project_id === $request->project()->id, 404);
         $page->delete();
 
         return response()->json(null, 204);

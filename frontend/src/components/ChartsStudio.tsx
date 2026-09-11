@@ -3,11 +3,13 @@ import { BarChart3, LoaderCircle, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import type { Chart, ChartData, SchemaColumn, SchemaTable } from '../types';
 import { ChartView } from './ChartView';
+import { useConfirm } from './ui/DialogProvider';
 
 const TYPE_LABELS = {bar:'Barras',line:'Líneas',area:'Área',pie:'Pastel',donut:'Dona'} as const;
 const AGG_LABELS = {count:'Conteo',sum:'Suma',avg:'Promedio',min:'Mínimo',max:'Máximo'} as const;
 
 export function ChartsStudio({tables}:{tables:SchemaTable[]}) {
+  const confirm = useConfirm();
   const [charts,setCharts] = useState<Chart[]>([]);
   const [data,setData] = useState<Record<number,ChartData>>({});
   const [showForm,setShowForm] = useState(false);
@@ -19,7 +21,7 @@ export function ChartsStudio({tables}:{tables:SchemaTable[]}) {
     setData(Object.fromEntries(entries.filter(([,d])=>d).map(([id,d])=>[id,d!])));
   }finally{ setLoading(false); } }
   useEffect(()=>{void load();},[]);
-  async function remove(id:number){ if(!confirm('¿Eliminar esta gráfica?'))return; await api.deleteChart(id); setCharts(v=>v.filter(c=>c.id!==id)); }
+  async function remove(id:number){ if(!await confirm({message:'¿Eliminar esta gráfica?',danger:true,confirmLabel:'Eliminar'}))return; await api.deleteChart(id); setCharts(v=>v.filter(c=>c.id!==id)); }
 
   if(loading) return <div className="center-state small"><LoaderCircle className="spin"/><p>Cargando gráficas…</p></div>;
   return <div className="charts-studio">

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { LoaderCircle, Lock, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
 import { api } from '../api/client';
+import { useConfirm } from './ui/DialogProvider';
 import type { Role, SchemaTable } from '../types';
 
 type Perm = {can_read:boolean;can_create:boolean;can_update:boolean;can_delete:boolean};
@@ -8,6 +9,7 @@ const ACTIONS: (keyof Perm)[] = ['can_read','can_create','can_update','can_delet
 const ACTION_LABELS: Record<keyof Perm,string> = {can_read:'Ver',can_create:'Crear',can_update:'Editar',can_delete:'Borrar'};
 
 export function RolesPermissions({tables}:{tables:SchemaTable[]}) {
+  const confirm = useConfirm();
   const [roles,setRoles] = useState<Role[]>([]);
   const [selectedId,setSelectedId] = useState<number|null>(null);
   const [matrix,setMatrix] = useState<Record<string,Perm>>({});
@@ -31,7 +33,7 @@ export function RolesPermissions({tables}:{tables:SchemaTable[]}) {
   },[selectedId,tables]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function createRole(e:FormEvent){ e.preventDefault(); if(!newRole.trim())return; const r=await api.createRole({name:newRole}); setRoles(v=>[...v,r]); setSelectedId(r.id); setNewRole(''); }
-  async function removeRole(id:number){ if(!confirm('¿Eliminar rol y sus permisos?'))return; await api.deleteRole(id); setRoles(v=>v.filter(r=>r.id!==id)); setSelectedId(null); }
+  async function removeRole(id:number){ if(!await confirm({message:'¿Eliminar rol y sus permisos?',danger:true,confirmLabel:'Eliminar'}))return; await api.deleteRole(id); setRoles(v=>v.filter(r=>r.id!==id)); setSelectedId(null); }
   function flip(table:string,key:keyof Perm){ setMatrix(v=>{const cur=v[table]??{can_read:false,can_create:false,can_update:false,can_delete:false}; return {...v,[table]:{...cur,[key]:!cur[key]}};}); }
   async function save(){ if(!selected)return; setSaving(true); try{
     await api.savePermissions(selected.id, Object.entries(matrix).map(([table_name,p])=>({table_name,...p})));
@@ -45,6 +47,7 @@ export function RolesPermissions({tables}:{tables:SchemaTable[]}) {
         <div><span className="kicker"><ShieldCheck size={13}/>Accesos</span><h2>Roles y permisos</h2></div>
         <form className="inline-form" onSubmit={createRole}><input value={newRole} onChange={e=>setNewRole(e.target.value)} placeholder="Nuevo rol…"/><button className="button primary" disabled={!newRole.trim()}><Plus size={16}/>Crear</button></form>
       </div>
+      <div className="callout admin-note" style={{margin:'0 20px 16px'}}><Lock size={18}/><div><strong>Solo informativo</strong><p>Esta pantalla organiza roles y permisos como referencia, pero no se aplican todavía: cualquier petición con la clave de administrador puede realizar cualquier acción sin importar lo configurado aquí.</p></div></div>
       <div className="menu-cols">
         <div className="role-list">
           {roles.map(r=><div key={r.id} className={`role-card ${selectedId===r.id?'active':''}`} onClick={()=>setSelectedId(r.id)}>

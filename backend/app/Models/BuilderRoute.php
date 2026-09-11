@@ -9,11 +9,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class BuilderRoute extends Model
 {
     protected $table = 'nx_routes';
+
     protected $fillable = [
-        'parent_id', 'name', 'slug', 'icon', 'sort_order',
+        'project_id', 'parent_id', 'name', 'slug', 'icon', 'sort_order',
         'content_type', 'content_config', 'layout',
         'active', 'visible_in_menu', 'badge_color', 'badge_label',
     ];
+
     protected $casts = [
         'content_config' => 'array',
         'active' => 'boolean',

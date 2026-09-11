@@ -1,0 +1,11 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - phpstan-baseline.neon
+
+parameters:
+    paths:
+        - app
+
+    # Lenient starting level given zero prior static analysis on this codebase.
+    # Ratchet up gradually as findings at this level are fixed.
+    level: 4

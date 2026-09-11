@@ -2,17 +2,31 @@
 
 use App\Http\Controllers\Api\ChartController;
 use App\Http\Controllers\Api\DatabaseController;
+use App\Http\Controllers\Api\InterfaceBuilderController;
 use App\Http\Controllers\Api\MenuController;
 use App\Http\Controllers\Api\PageController;
+use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\ProjectExportController;
+use App\Http\Controllers\Api\PublicPreviewController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\RouteController;
 use App\Http\Controllers\Api\SchemaExplorerController;
-use App\Http\Controllers\Api\InterfaceBuilderController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', fn () => ['ok' => true, 'name' => 'NexoDB Studio']);
 
 // Public render of a custom page (used by the preview).
 Route::get('/pages/{page}/render', [PageController::class, 'show'])->whereNumber('page');
+
+// Public, unauthenticated, read-only preview endpoints — gated per-project by `is_public`.
+Route::prefix('preview')->middleware('throttle:60,1')->group(function () {
+    Route::get('/{project}/routes', [PublicPreviewController::class, 'routes']);
+    Route::get('/{project}/forms', [PublicPreviewController::class, 'forms']);
+    Route::get('/{project}/views', [PublicPreviewController::class, 'views']);
+    Route::get('/{project}/data/{table}', [PublicPreviewController::class, 'browse'])->where('table', '[a-zA-Z0-9_]+');
+    Route::get('/{project}/lookup/{table}', [PublicPreviewController::class, 'lookup'])->where('table', '[a-zA-Z0-9_]+');
+    Route::get('/{project}/charts/{chart}', [PublicPreviewController::class, 'chartData']);
+});
 
 Route::middleware(['builder.admin', 'throttle:api'])->prefix('builder')->group(function () {
     // Database explorer
@@ -45,57 +59,68 @@ Route::middleware(['builder.admin', 'throttle:api'])->prefix('builder')->group(f
     Route::post('/db/{table}/foreign-keys', [SchemaExplorerController::class, 'addForeignKey'])->where('table', '[a-zA-Z0-9_]+');
     Route::delete('/db/{table}/foreign-keys/{column}', [SchemaExplorerController::class, 'dropForeignKey'])->where('table', '[a-zA-Z0-9_]+')->where('column', '[a-zA-Z0-9_]+');
 
-    // Menus
-    Route::get('/menus', [MenuController::class, 'index']);
-    Route::post('/menus', [MenuController::class, 'store']);
-    Route::put('/menus/{menu}', [MenuController::class, 'update']);
-    Route::delete('/menus/{menu}', [MenuController::class, 'destroy']);
-    Route::get('/menus-render', [MenuController::class, 'render']);
-    Route::post('/menus/{menu}/items', [MenuController::class, 'storeItem']);
-    Route::put('/menus/{menu}/items/{item}', [MenuController::class, 'updateItem']);
-    Route::delete('/menus/{menu}/items/{item}', [MenuController::class, 'destroyItem']);
-    Route::post('/menus/{menu}/reorder', [MenuController::class, 'reorderItems']);
+    // Projects (meta — not scoped to "a current project")
+    Route::get('/projects', [ProjectController::class, 'index']);
+    Route::post('/projects', [ProjectController::class, 'store']);
+    Route::put('/projects/{project}', [ProjectController::class, 'update']);
+    Route::delete('/projects/{project}', [ProjectController::class, 'destroy']);
+    Route::post('/projects/{project}/export', [ProjectExportController::class, 'export']);
 
-    // Routes (Project Builder)
-    Route::get('/routes', [\App\Http\Controllers\Api\RouteController::class, 'index']);
-    Route::get('/routes-flat', [\App\Http\Controllers\Api\RouteController::class, 'flat']);
-    Route::post('/routes', [\App\Http\Controllers\Api\RouteController::class, 'store']);
-    Route::put('/routes/{id}', [\App\Http\Controllers\Api\RouteController::class, 'update']);
-    Route::delete('/routes/{id}', [\App\Http\Controllers\Api\RouteController::class, 'destroy']);
-    Route::post('/routes-reorder', [\App\Http\Controllers\Api\RouteController::class, 'reorder']);
-    Route::get('/routes-preview', [\App\Http\Controllers\Api\RouteController::class, 'preview']);
-
-    // Roles & permissions
+    // Roles & permissions (global, not project-scoped — informational only)
     Route::get('/roles', [RoleController::class, 'index']);
     Route::post('/roles', [RoleController::class, 'store']);
     Route::put('/roles/{role}', [RoleController::class, 'update']);
     Route::delete('/roles/{role}', [RoleController::class, 'destroy']);
     Route::put('/roles/{role}/permissions', [RoleController::class, 'savePermissions']);
 
-    // Charts
-    Route::get('/charts', [ChartController::class, 'index']);
-    Route::post('/charts', [ChartController::class, 'store']);
-    Route::put('/charts/{chart}', [ChartController::class, 'update']);
-    Route::delete('/charts/{chart}', [ChartController::class, 'destroy']);
-    Route::get('/charts/{chart}/data', [ChartController::class, 'data']);
+    Route::middleware('project.scope')->group(function () {
+        // Menus
+        Route::get('/menus', [MenuController::class, 'index']);
+        Route::post('/menus', [MenuController::class, 'store']);
+        Route::put('/menus/{menu}', [MenuController::class, 'update']);
+        Route::delete('/menus/{menu}', [MenuController::class, 'destroy']);
+        Route::get('/menus-render', [MenuController::class, 'render']);
+        Route::post('/menus/{menu}/items', [MenuController::class, 'storeItem']);
+        Route::put('/menus/{menu}/items/{item}', [MenuController::class, 'updateItem']);
+        Route::delete('/menus/{menu}/items/{item}', [MenuController::class, 'destroyItem']);
+        Route::post('/menus/{menu}/reorder', [MenuController::class, 'reorderItems']);
 
-    // Custom code pages
-    Route::get('/pages', [PageController::class, 'index']);
-    Route::post('/pages', [PageController::class, 'store']);
-    Route::get('/pages/{page}', [PageController::class, 'show']);
-    Route::put('/pages/{page}', [PageController::class, 'update']);
-    Route::delete('/pages/{page}', [PageController::class, 'destroy']);
+        // Routes (Project Builder)
+        Route::get('/routes', [RouteController::class, 'index']);
+        Route::get('/routes-flat', [RouteController::class, 'flat']);
+        Route::post('/routes', [RouteController::class, 'store']);
+        Route::put('/routes/{id}', [RouteController::class, 'update']);
+        Route::delete('/routes/{id}', [RouteController::class, 'destroy']);
+        Route::post('/routes-reorder', [RouteController::class, 'reorder']);
+        Route::get('/routes-preview', [RouteController::class, 'preview']);
 
-    // Reusable form and table-view designers
+        // Charts
+        Route::get('/charts', [ChartController::class, 'index']);
+        Route::post('/charts', [ChartController::class, 'store']);
+        Route::put('/charts/{chart}', [ChartController::class, 'update']);
+        Route::delete('/charts/{chart}', [ChartController::class, 'destroy']);
+        Route::get('/charts/{chart}/data', [ChartController::class, 'data']);
+
+        // Custom code pages
+        Route::get('/pages', [PageController::class, 'index']);
+        Route::post('/pages', [PageController::class, 'store']);
+        Route::get('/pages/{page}', [PageController::class, 'show']);
+        Route::put('/pages/{page}', [PageController::class, 'update']);
+        Route::delete('/pages/{page}', [PageController::class, 'destroy']);
+
+        // Reusable form and table-view designers
+        Route::get('/forms', [InterfaceBuilderController::class, 'forms']);
+        Route::get('/forms/key/{key}', [InterfaceBuilderController::class, 'formByKey'])->where('key', '[a-z0-9_.-]+');
+        Route::post('/forms', [InterfaceBuilderController::class, 'storeForm']);
+        Route::put('/forms/{form}', [InterfaceBuilderController::class, 'updateForm']);
+        Route::delete('/forms/{form}', [InterfaceBuilderController::class, 'destroyForm']);
+        Route::get('/views', [InterfaceBuilderController::class, 'views']);
+        Route::get('/views/key/{key}', [InterfaceBuilderController::class, 'viewByKey'])->where('key', '[a-z0-9_.-]+');
+        Route::post('/views', [InterfaceBuilderController::class, 'storeView']);
+        Route::put('/views/{view}', [InterfaceBuilderController::class, 'updateView']);
+        Route::delete('/views/{view}', [InterfaceBuilderController::class, 'destroyView']);
+    });
+
+    // Data-layer lookups (against shared nx_ tables) — not project-scoped.
     Route::get('/lookups/{table}', [InterfaceBuilderController::class, 'lookup'])->where('table', '[a-zA-Z0-9_]+');
-    Route::get('/forms', [InterfaceBuilderController::class, 'forms']);
-    Route::get('/forms/key/{key}', [InterfaceBuilderController::class, 'formByKey'])->where('key', '[a-z0-9_.-]+');
-    Route::post('/forms', [InterfaceBuilderController::class, 'storeForm']);
-    Route::put('/forms/{form}', [InterfaceBuilderController::class, 'updateForm']);
-    Route::delete('/forms/{form}', [InterfaceBuilderController::class, 'destroyForm']);
-    Route::get('/views', [InterfaceBuilderController::class, 'views']);
-    Route::get('/views/key/{key}', [InterfaceBuilderController::class, 'viewByKey'])->where('key', '[a-z0-9_.-]+');
-    Route::post('/views', [InterfaceBuilderController::class, 'storeView']);
-    Route::put('/views/{view}', [InterfaceBuilderController::class, 'updateView']);
-    Route::delete('/views/{view}', [InterfaceBuilderController::class, 'destroyView']);
 });

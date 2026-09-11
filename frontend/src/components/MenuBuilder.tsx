@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ChevronDown, Circle, FolderTree, Link, LoaderCircle, Plus, Route, Save, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
+import { useConfirm } from './ui/DialogProvider';
 import type { Chart, Menu, MenuItem, Role, SchemaTable } from '../types';
 
 export function MenuBuilder({tables}: {tables:SchemaTable[]}) {
+  const confirm = useConfirm();
   const [menus,setMenus] = useState<Menu[]>([]);
   const [roles,setRoles] = useState<Role[]>([]);
   const [charts,setCharts] = useState<Chart[]>([]);
@@ -17,13 +19,13 @@ export function MenuBuilder({tables}: {tables:SchemaTable[]}) {
   const menu = menus.find(m=>m.id===activeId)??null;
 
   async function createMenu(e:FormEvent){ e.preventDefault(); if(!newMenu.trim())return; const m=await api.createMenu({name:newMenu}); setMenus(v=>[...v,m]); setActiveId(m.id); setNewMenu(''); }
-  async function removeMenu(id:number){ if(!confirm('¿Eliminar este menú con todos sus elementos?'))return; await api.deleteMenu(id); setMenus(v=>v.filter(m=>m.id!==id)); setActiveId(null); }
+  async function removeMenu(id:number){ if(!await confirm({message:'¿Eliminar este menú con todos sus elementos?',danger:true,confirmLabel:'Eliminar'}))return; await api.deleteMenu(id); setMenus(v=>v.filter(m=>m.id!==id)); setActiveId(null); }
   async function saveItem(item:Partial<MenuItem>&{role_ids?:number[]}){
     if(!menu) return;
     if(editing){ await api.updateMenuItem(menu.id,editing.id,{...item}); } else { await api.createMenuItem(menu.id,{...item}); }
     setEditing(null); setMenus(await api.menus());
   }
-  async function removeItem(item:MenuItem){ if(!menu||!confirm(`¿Eliminar "${item.label}"?`))return; await api.deleteMenuItem(menu.id,item.id); setMenus(await api.menus()); }
+  async function removeItem(item:MenuItem){ if(!menu||!await confirm({message:`¿Eliminar "${item.label}"?`,danger:true,confirmLabel:'Eliminar'}))return; await api.deleteMenuItem(menu.id,item.id); setMenus(await api.menus()); }
   async function move(item:MenuItem,dir:-1|1){
     if(!menu) return; const ids=menu.items.map(i=>i.id); const idx=ids.indexOf(item.id); const swap=idx+dir;
     if(swap<0||swap>=ids.length) return; [ids[idx],ids[swap]]=[ids[swap],ids[idx]];

@@ -12,6 +12,11 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
+/**
+ * Informational only: permissions managed here are not enforced anywhere in the API.
+ * Every request carrying the shared BUILDER_ADMIN_KEY can perform any action regardless
+ * of what is configured here. Kept as labeling/documentation metadata for a single-user tool.
+ */
 class RoleController extends Controller
 {
     public function index(): JsonResponse
@@ -63,7 +68,9 @@ class RoleController extends Controller
             $role->permissions()->delete();
             foreach ($data['permissions'] as $perm) {
                 abort_unless(Schema::hasTable($perm['table_name']), 422, "La tabla {$perm['table_name']} no existe.");
-                if (! ($perm['can_read'] || $perm['can_create'] || $perm['can_update'] || $perm['can_delete'])) continue;
+                if (! ($perm['can_read'] || $perm['can_create'] || $perm['can_update'] || $perm['can_delete'])) {
+                    continue;
+                }
                 BuilderPermission::create([
                     'role_id' => $role->id, 'table_name' => $perm['table_name'],
                     'can_read' => (bool) ($perm['can_read'] ?? false),

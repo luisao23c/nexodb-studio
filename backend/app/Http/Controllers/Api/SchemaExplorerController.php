@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Builder\AddForeignKeyRequest;
 use App\Services\DynamicTableService;
+use App\Support\SafeIdentifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -72,13 +74,10 @@ class SchemaExplorerController extends Controller
         return response()->json(['modules' => $relations]);
     }
 
-    public function addForeignKey(Request $request, string $table): JsonResponse
+    public function addForeignKey(AddForeignKeyRequest $request, string $table): JsonResponse
     {
         $this->assertTable($table);
-        $data = $request->validate([
-            'column' => 'required|string', 'referenced_table' => 'required|string|regex:/^nx_[a-zA-Z0-9_]+$/',
-            'referenced_column' => 'nullable|string', 'on_delete' => 'nullable|string|in:CASCADE,RESTRICT,SET NULL,NO ACTION',
-        ]);
+        $data = $request->validated();
         abort_unless(Schema::hasColumn($table, $data['column']), 422, 'La columna no existe.');
         abort_unless(Schema::hasTable($data['referenced_table']), 422, 'La tabla referenciada no existe.');
         $this->tables->addForeignKey($table, $data['column'], $data['referenced_table'], $data['referenced_column'] ?? 'id', $data['on_delete'] ?? 'SET NULL');
@@ -120,13 +119,15 @@ class SchemaExplorerController extends Controller
         $definitions = collect(DB::select("SHOW COLUMNS FROM `{$foreignKey->target_table}`"));
         $display = $definitions->first(fn ($item) => preg_match('/varchar|text/i', $item->Type) && ! preg_match('/password|token|secret/i', $item->Field))?->Field ?? $foreignKey->target_column;
         $query = DB::table($foreignKey->target_table)->select($foreignKey->target_column.' as id', $display.' as label');
-        if ($search = trim((string) $request->query('search', ''))) $query->where($display, 'like', "%{$search}%");
+        if ($search = trim((string) $request->query('search', ''))) {
+            $query->where($display, 'like', "%{$search}%");
+        }
 
         return response()->json($query->orderBy($display)->limit(100)->get());
     }
 
     private function assertTable(string $table): void
     {
-        abort_unless(preg_match('/^nx_[a-zA-Z0-9_]+$/', $table) && Schema::hasTable($table), 404, 'Tabla no encontrada.');
+        abort_unless(SafeIdentifier::tableExists($table), 404, 'Tabla no encontrada.');
     }
 }

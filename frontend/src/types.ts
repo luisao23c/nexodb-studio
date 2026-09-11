@@ -11,26 +11,28 @@ export interface SqlResult { columns:string[]; rows:Record<string,unknown>[]; co
 export interface AuditEntry { id:number; actor:string; action:string; target_type?:string|null; target?:string|null; sql_statement?:string|null; meta?:Record<string,unknown>|null; ip?:string|null; created_at:string; }
 export interface DashboardData { database:string; tables:DbOverviewTable[]; total_tables:number; total_rows:number; total_size_kb:number; recent:{action:string;target?:string|null;created_at:string}[]; activity:{d:string;c:number}[]; }
 
-export interface Menu { id:number; name:string; slug:string; icon:string; sort_order:number; active:boolean; items:MenuItem[]; }
+export interface Project { id:number; name:string; slug:string; icon?:string|null; is_public:boolean; active:boolean; created_at?:string; }
+
+export interface Menu { id:number; project_id:number; name:string; slug:string; icon:string; sort_order:number; active:boolean; items:MenuItem[]; }
 export interface MenuItem { id:number; menu_id:number; parent_id?:number|null; label:string; icon:string; target_type:'table'|'page'|'chart_dashboard'|'url'; target_id?:number|null; target_table?:string|null; url?:string|null; badge?:string|null; sort_order:number; active:boolean; required_role_ids?:number[]|null; }
 
 export interface Role { id:number; name:string; slug:string; description?:string|null; color:string; is_admin:boolean; permissions:Permission[]; }
 export interface Permission { id:number; role_id:number; table_name:string; can_read:boolean; can_create:boolean; can_update:boolean; can_delete:boolean; }
 
-export interface Chart { id:number; name:string; table_name:string; chart_type:'bar'|'line'|'area'|'pie'|'donut'; label_field:string; value_field?:string|null; aggregate:'count'|'sum'|'avg'|'min'|'max'; sort_direction:'asc'|'desc'; limit:number; color:string; active:boolean; }
+export interface Chart { id:number; project_id:number; name:string; table_name:string; chart_type:'bar'|'line'|'area'|'pie'|'donut'; label_field:string; value_field?:string|null; aggregate:'count'|'sum'|'avg'|'min'|'max'; sort_direction:'asc'|'desc'; limit:number; color:string; active:boolean; }
 export interface ChartData { chart:{id:number;name:string;chart_type:string;color:string}; data:{label:string;value:number}[]; }
 
-export interface CodePage { id:number; name:string; slug:string; description?:string|null; code:string; active:boolean; }
+export interface CodePage { id:number; project_id:number; name:string; slug:string; description?:string|null; code:string; active:boolean; }
 
-export interface BuilderRoute { id:number; parent_id:number|null; name:string; slug:string; icon?:string|null; sort_order:number;
+export interface BuilderRoute { id:number; project_id:number; parent_id:number|null; name:string; slug:string; icon?:string|null; sort_order:number;
   content_type:'table'|'form'|'chart'|'page'|'redirect'|'divider'|'empty'; content_config?:Record<string,unknown>|null;
   layout:'default'|'sidebar'|'tabs'|'fullwidth'|'card'; active:boolean; visible_in_menu:boolean;
   badge_color?:string|null; badge_label?:string|null; children?:BuilderRoute[]; }
 
 export type FormFieldType = 'text'|'textarea'|'number'|'email'|'password'|'date'|'datetime'|'autocomplete'|'select'|'multiselect'|'checkbox'|'radio'|'switch'|'file'|'hidden'|'heading'|'divider'|'button';
 export interface BuilderFormField { id?:number; field_key:string; label:string; field_type:FormFieldType; source_column?:string|null; placeholder?:string|null; help_text?:string|null; default_value?:string|null; width:number; required:boolean; options?:string[]|null; config?:Record<string,unknown>|null; sort_order?:number; }
-export interface BuilderForm { id?:number; name:string; form_key:string; table_name:string; description?:string|null; layout_columns:number; submit_label:string; settings?:Record<string,unknown>|null; active:boolean; fields:BuilderFormField[]; }
+export interface BuilderForm { id?:number; project_id?:number; name:string; form_key:string; table_name:string; description?:string|null; layout_columns:number; submit_label:string; settings?:Record<string,unknown>|null; active:boolean; fields:BuilderFormField[]; }
 
 export type ViewDisplayType = 'text'|'number'|'money'|'date'|'datetime'|'badge'|'boolean'|'image'|'link'|'email'|'json';
 export interface BuilderViewColumn { id?:number; column_key:string; label:string; display_type:ViewDisplayType; width?:number|null; sortable:boolean; searchable:boolean; visible:boolean; config?:Record<string,unknown>|null; sort_order?:number; }
-export interface BuilderView { id?:number; name:string; view_key:string; table_name:string; description?:string|null; primary_key:string; default_sort_column?:string|null; default_sort_direction:'asc'|'desc'; per_page:number; settings?:Record<string,unknown>|null; active:boolean; columns:BuilderViewColumn[]; }
+export interface BuilderView { id?:number; project_id?:number; name:string; view_key:string; table_name:string; description?:string|null; primary_key:string; default_sort_column?:string|null; default_sort_direction:'asc'|'desc'; per_page:number; settings?:Record<string,unknown>|null; active:boolean; columns:BuilderViewColumn[]; }

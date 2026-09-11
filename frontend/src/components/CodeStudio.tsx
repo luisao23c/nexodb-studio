@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Code2, LoaderCircle, Play, Plus, Save, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
+import { useConfirm, usePrompt } from './ui/DialogProvider';
 import type { CodePage, SchemaTable } from '../types';
 
 /** Generates a ready-to-edit React page that talks to the live API. */
@@ -46,6 +47,8 @@ export default function ${comp}() {
 }
 
 export function CodeStudio({tables}:{tables:SchemaTable[]}) {
+  const confirm = useConfirm();
+  const prompt = usePrompt();
   const [pages,setPages] = useState<CodePage[]>([]);
   const [activeId,setActiveId] = useState<number|null>(null);
   const [code,setCode] = useState('');
@@ -59,12 +62,12 @@ export function CodeStudio({tables}:{tables:SchemaTable[]}) {
   useEffect(()=>{void (async()=>{ try{ const list=await api.pages(); setPages(list); if(list[0]) void openPage(list[0].id);}finally{ setLoading(false);} })();},[]);
 
   async function openPage(id:number){ const p = await api.page(id); setActiveId(p.id); setName(p.name); setCode(p.code); setPreviewDoc(p.code); setStatus(''); }
-  async function createPage(){ const n = prompt('Nombre de la nueva página:'); if(!n?.trim())return;
+  async function createPage(){ const n = await prompt({title:'Nueva página',message:'Nombre de la nueva página:'}); if(!n?.trim())return;
     const p = await api.createPage({name:n.trim()}); setPages(v=>[...v,{...p,code:p.code}]); await openPage(p.id); }
   async function save(){ if(!activeId)return; setSaving(true); try{ await api.updatePage(activeId,{code,name}); setPages(v=>v.map(p=>p.id===activeId?{...p,code,name}:p)); setStatus('Guardado ✓'); setTimeout(()=>setStatus(''),2000); }finally{ setSaving(false); } }
-  async function remove(id:number){ if(!confirm('¿Eliminar esta página?'))return; await api.deletePage(id); const rest=pages.filter(p=>p.id!==id); setPages(rest); setActiveId(null); setCode(''); setName(''); }
+  async function remove(id:number){ if(!await confirm({message:'¿Eliminar esta página?',danger:true,confirmLabel:'Eliminar'}))return; await api.deletePage(id); const rest=pages.filter(p=>p.id!==id); setPages(rest); setActiveId(null); setCode(''); setName(''); }
   function runPreview(){ setPreviewDoc(code); }
-  async function generateReact(){ const n = prompt('Nombre del componente React:','MiVista'); if(!n?.trim())return;
+  async function generateReact(){ const n = await prompt({title:'Generar componente React',message:'Nombre del componente React:',defaultValue:'MiVista'}); if(!n?.trim())return;
     const table = tables[0]; const detail=table?await api.schemaTable(table.name):null; const fields=(detail?.columns??[]).filter(c=>!['created_at','updated_at','deleted_at'].includes(c.name)).map(c=>({name:c.name,label:c.name}));
     setCode(reactTemplate(n, table?.name??'nx_tabla', fields)); setStatus('Plantilla React generada — revísala y guárdala'); }
 

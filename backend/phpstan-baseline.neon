@@ -1,0 +1,13 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Anonymous function should return array\{id\: int, name\: string, slug\: string, icon\: string, items\: Illuminate\\Support\\Collection\<int, array\{id\: int, label\: string, icon\: string, parent_id\: int\<0, max\>\|null, target_type\: string, target_id\: int\<0, max\>\|null, target_table\: string\|null, url\: string\|null, \.\.\.\}\>\} but returns array\{id\: int, name\: string, slug\: string, icon\: string, items\: Illuminate\\Support\\Collection\<int, array\{id\: int, label\: string, icon\: string, parent_id\: int\<0, max\>\|null, target_type\: string, target_id\: int\<0, max\>\|null, target_table\: string\|null, url\: string\|null, \.\.\.\}\>\}\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Http/Controllers/Api/MenuController.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>Field" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: app/Http/Controllers/Api/SchemaExplorerController.php

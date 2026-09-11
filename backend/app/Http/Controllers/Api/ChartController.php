@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BuilderChart;
+use App\Support\SafeIdentifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,25 +14,27 @@ use Illuminate\Validation\ValidationException;
 
 class ChartController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        return response()->json(BuilderChart::orderBy('name')->get());
+        return response()->json($request->project()->charts()->orderBy('name')->get());
     }
 
     public function store(Request $request): JsonResponse
     {
-        return response()->json(BuilderChart::create($this->validated($request)), 201);
+        return response()->json($request->project()->charts()->create($this->validated($request)), 201);
     }
 
     public function update(Request $request, BuilderChart $chart): JsonResponse
     {
+        abort_unless($chart->project_id === $request->project()->id, 404);
         $chart->update($this->validated($request));
 
         return response()->json($chart->fresh());
     }
 
-    public function destroy(BuilderChart $chart): JsonResponse
+    public function destroy(Request $request, BuilderChart $chart): JsonResponse
     {
+        abort_unless($chart->project_id === $request->project()->id, 404);
         $chart->delete();
 
         return response()->json(null, 204);
@@ -48,7 +51,9 @@ class ChartController extends Controller
             $rows = $query->select($chart->label_field.' as label', DB::raw('COUNT(*) as value'));
         } else {
             abort_unless($chart->value_field && in_array($chart->value_field, $columns, true), 422, 'Campo de valor inválido.');
-            $aggregate = match ($chart->aggregate) {'avg' => 'AVG', 'min' => 'MIN', 'max' => 'MAX', default => 'SUM'};
+            $aggregate = match ($chart->aggregate) {
+                'avg' => 'AVG', 'min' => 'MIN', 'max' => 'MAX', default => 'SUM'
+            };
             $rows = $query->select($chart->label_field.' as label', DB::raw("{$aggregate}(`{$chart->value_field}`) as value"));
         }
 
@@ -74,14 +79,16 @@ class ChartController extends Controller
         $this->assertSafeTable($data['table_name']);
         $columns = Schema::getColumnListing($data['table_name']);
         abort_unless(in_array($data['label_field'], $columns, true), 422, 'Campo de etiqueta inválido.');
-        if (($data['value_field'] ?? '') !== '') abort_unless(in_array($data['value_field'], $columns, true), 422, 'Campo de valor inválido.');
+        if (($data['value_field'] ?? '') !== '') {
+            abort_unless(in_array($data['value_field'], $columns, true), 422, 'Campo de valor inválido.');
+        }
 
         return $data;
     }
 
     private function assertSafeTable(string $table): void
     {
-        if (! preg_match('/^nx_[a-zA-Z0-9_]+$/', $table) || ! Schema::hasTable($table)) {
+        if (! SafeIdentifier::tableExists($table)) {
             throw ValidationException::withMessages(['table_name' => 'La tabla seleccionada no es válida.']);
         }
     }

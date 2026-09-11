@@ -5,10 +5,13 @@
 /backend/storage/framework/sessions/*
 /backend/storage/framework/views/*
 /backend/storage/logs/*
+/backend/.phpunit.result.cache
 /frontend/node_modules/
 /frontend/dist/
 /frontend/.env
 /frontend/*.tsbuildinfo
 /frontend/vite.config.js
 /frontend/vite.config.d.ts
+/frontend/*.log
+/frontend/.eslintcache
 .DS_Store

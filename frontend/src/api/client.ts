@@ -1,12 +1,22 @@
-import type { AuditEntry, BrowsePage, BuilderForm, BuilderRoute, BuilderView, Chart, ChartData, CodePage, DashboardData, DbForeignKey, DbOverviewTable, Menu, MenuItem, RelationOption, Role, SchemaRelationModule, SchemaTable, SchemaTableDetail, SqlResult } from '../types';
+import type { AuditEntry, BrowsePage, BuilderForm, BuilderRoute, BuilderView, Chart, ChartData, CodePage, DashboardData, DbForeignKey, DbOverviewTable, Menu, MenuItem, Project, RelationOption, Role, SchemaRelationModule, SchemaTable, SchemaTableDetail, SqlResult } from '../types';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 const KEY = import.meta.env.VITE_BUILDER_KEY || '';
 
+let currentProjectId: number | null = null;
+/** Set while rendering the standalone, unauthenticated public preview for a specific project. */
+let previewProjectId: number | null = null;
+
+export function setCurrentProjectId(id: number | null) { currentProjectId = id; }
+export function setPreviewMode(id: number | null) { previewProjectId = id; }
+
 async function request<T>(path:string, init:RequestInit = {}):Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Accept','application/json');
-  headers.set('X-Builder-Key',KEY);
+  if (previewProjectId === null) {
+    headers.set('X-Builder-Key',KEY);
+    if (currentProjectId !== null) headers.set('X-Project-Id', String(currentProjectId));
+  }
   if (!(init.body instanceof FormData)) headers.set('Content-Type','application/json');
   const response = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!response.ok) {
@@ -56,7 +66,13 @@ export const api = {
     return fetch(url,{headers:{'X-Builder-Key':KEY}}).then(r=>{ if(!r.ok) throw new Error(`Error ${r.status}`); return r.blob(); }).then(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`${table}.${format}`; a.click(); URL.revokeObjectURL(a.href); });
   },
   importCsv: (table:string,file:File) => { const fd=new FormData(); fd.append('file',file); return request<{inserted:number;errors:string[];total_lines:number}>(`/builder/db/${table}/import`,{method:'POST',body:fd}); },
-  browse: (table:string,page=1,search='') => request<BrowsePage>(`/builder/db/${table}/browse?page=${page}&search=${encodeURIComponent(search)}`),
+  exportProject: (project:Project) => {
+    const url = `${BASE}/builder/projects/${project.id}/export`;
+    return fetch(url,{method:'POST',headers:{'X-Builder-Key':KEY}}).then(r=>{ if(!r.ok) throw new Error(`Error ${r.status}`); return r.blob(); }).then(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`${project.slug}-export.zip`; a.click(); URL.revokeObjectURL(a.href); });
+  },
+  browse: (table:string,page=1,search='') => previewProjectId !== null
+    ? request<BrowsePage>(`/preview/${previewProjectId}/data/${table}?page=${page}&search=${encodeURIComponent(search)}`)
+    : request<BrowsePage>(`/builder/db/${table}/browse?page=${page}&search=${encodeURIComponent(search)}`),
   createRow: (table:string,data:Record<string,unknown>) => request<Record<string,unknown>>(`/builder/db/${table}/rows`,{method:'POST',...json(data)}),
   updateRow: (table:string,id:number,data:Record<string,unknown>) => request<Record<string,unknown>>(`/builder/db/${table}/rows/${id}`,{method:'PUT',...json(data)}),
   deleteRow: (table:string,id:number) => request<void>(`/builder/db/${table}/rows/${id}`,{method:'DELETE'}),
@@ -108,13 +124,19 @@ export const api = {
   deletePage: (id:number) => request<void>(`/builder/pages/${id}`,{method:'DELETE'}),
 
   // Reusable interfaces
-  lookupOptions: (table:string,valueColumn:string,labelColumn:string,search='') => request<{value:string|number;label:string}[]>(`/builder/lookups/${table}?value_column=${encodeURIComponent(valueColumn)}&label_column=${encodeURIComponent(labelColumn)}&search=${encodeURIComponent(search)}`),
-  forms: () => request<BuilderForm[]>('/builder/forms'),
+  lookupOptions: (table:string,valueColumn:string,labelColumn:string,search='') => previewProjectId !== null
+    ? request<{value:string|number;label:string}[]>(`/preview/${previewProjectId}/lookup/${table}?value_column=${encodeURIComponent(valueColumn)}&label_column=${encodeURIComponent(labelColumn)}&search=${encodeURIComponent(search)}`)
+    : request<{value:string|number;label:string}[]>(`/builder/lookups/${table}?value_column=${encodeURIComponent(valueColumn)}&label_column=${encodeURIComponent(labelColumn)}&search=${encodeURIComponent(search)}`),
+  forms: () => previewProjectId !== null
+    ? request<BuilderForm[]>(`/preview/${previewProjectId}/forms`)
+    : request<BuilderForm[]>('/builder/forms'),
   formByKey: (key:string) => request<BuilderForm>(`/builder/forms/key/${encodeURIComponent(key)}`),
   createForm: (data:BuilderForm) => request<BuilderForm>('/builder/forms',{method:'POST',...json(data)}),
   updateForm: (id:number,data:BuilderForm) => request<BuilderForm>(`/builder/forms/${id}`,{method:'PUT',...json(data)}),
   deleteForm: (id:number) => request<void>(`/builder/forms/${id}`,{method:'DELETE'}),
-  views: () => request<BuilderView[]>('/builder/views'),
+  views: () => previewProjectId !== null
+    ? request<BuilderView[]>(`/preview/${previewProjectId}/views`)
+    : request<BuilderView[]>('/builder/views'),
   viewByKey: (key:string) => request<BuilderView>(`/builder/views/key/${encodeURIComponent(key)}`),
   createView: (data:BuilderView) => request<BuilderView>('/builder/views',{method:'POST',...json(data)}),
   updateView: (id:number,data:BuilderView) => request<BuilderView>(`/builder/views/${id}`,{method:'PUT',...json(data)}),
@@ -127,5 +149,13 @@ export const api = {
   updateRoute: (id:number,data:Partial<BuilderRoute>) => request<{ok:boolean;route:BuilderRoute}>(`/builder/routes/${id}`,{method:'PUT',...json(data)}),
   deleteRoute: (id:number) => request<{ok:boolean}>(`/builder/routes/${id}`,{method:'DELETE'}),
   reorderRoutes: (order:{id:number;parent_id:number|null;sort_order:number}[]) => request<{ok:boolean}>('/builder/routes-reorder',{method:'POST',...json({order})}),
-  routesPreview: () => request<{routes:BuilderRoute[];paths:Record<number,string>;tables:{name:string}[]}>('/builder/routes-preview'),
+  routesPreview: () => previewProjectId !== null
+    ? request<{routes:BuilderRoute[];paths:Record<number,string>}>(`/preview/${previewProjectId}/routes`)
+    : request<{routes:BuilderRoute[];paths:Record<number,string>;tables:{name:string}[]}>('/builder/routes-preview'),
+
+  // Projects (meta)
+  projects: () => request<Project[]>('/builder/projects'),
+  createProject: (data:{name:string}) => request<Project>('/builder/projects',{method:'POST',...json(data)}),
+  updateProject: (id:number,data:Partial<Pick<Project,'name'|'icon'|'is_public'|'active'>>) => request<Project>(`/builder/projects/${id}`,{method:'PUT',...json(data)}),
+  deleteProject: (id:number) => request<void>(`/builder/projects/${id}`,{method:'DELETE'}),
 };

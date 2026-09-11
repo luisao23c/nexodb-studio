@@ -14,10 +14,13 @@ export function ChartView({ chart, data, height = 240 }:{ chart:ChartData['chart
   if(!data.length) return <div className="chart-empty">Sin datos para graficar todavía.</div>;
 
   if(chart.chart_type==='pie'||chart.chart_type==='donut'){
-    let angle = -Math.PI/2;
     const cx=width/3, cy=height/2, r=Math.min(cx,cy)-16, inner=chart.chart_type==='donut'?r*0.58:0;
+    const angles = data.reduce<{a0:number;a1:number}[]>((acc,d)=>{
+      const a0 = acc.length ? acc[acc.length-1].a1 : -Math.PI/2;
+      return [...acc, {a0, a1:a0+(d.value/total)*Math.PI*2}];
+    },[]);
     const slices = data.map((d,i)=>{
-      const a0=angle, a1=angle+(d.value/total)*Math.PI*2; angle=a1;
+      const {a0,a1} = angles[i];
       const large=(a1-a0)>Math.PI?1:0;
       const x0=cx+r*Math.cos(a0), y0=cy+r*Math.sin(a0), x1=cx+r*Math.cos(a1), y1=cy+r*Math.sin(a1);
       const xi1=cx+inner*Math.cos(a1), yi1=cy+inner*Math.sin(a1), xi0=cx+inner*Math.cos(a0), yi0=cy+inner*Math.sin(a0);

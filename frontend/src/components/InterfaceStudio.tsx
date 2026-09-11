@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlignLeft, ArrowDown, ArrowUp, Braces, Calendar, CheckSquare, ChevronDown, Columns3, Eye, FileUp, FormInput, Hash, KeyRound, Link, List, LoaderCircle, Mail, MousePointerClick, Plus, Radio, Save, Search, SlidersHorizontal, Sparkles, Table2, TextCursorInput, ToggleLeft, Trash2, Type } from 'lucide-react';
 import { api } from '../api/client';
+import { useConfirm } from './ui/DialogProvider';
 import type { BuilderForm, BuilderFormField, BuilderView, BuilderViewColumn, FormFieldType, SchemaColumn, SchemaTable, ViewDisplayType } from '../types';
 
 type StudioMode = 'forms'|'views';
@@ -54,6 +55,7 @@ export function InterfaceStudio({tables}:{tables:SchemaTable[]}){
 }
 
 function FormDesigner({tables,items,onChange}:{tables:SchemaTable[];items:BuilderForm[];onChange:(v:BuilderForm[])=>void}){
+  const confirm = useConfirm();
   const [activeId,setActiveId]=useState<number|null>(items[0]?.id??null);
   const [draft,setDraft]=useState<BuilderForm>(items[0]??freshForm(tables[0]?.name));
   const [selected,setSelected]=useState<number|null>(draft.fields[0]?0:null);
@@ -68,7 +70,7 @@ function FormDesigner({tables,items,onChange}:{tables:SchemaTable[];items:Builde
   function move(index:number,dir:-1|1){const target=index+dir;if(target<0||target>=draft.fields.length)return;setDraft(v=>{const fields=[...v.fields];[fields[index],fields[target]]=[fields[target],fields[index]];return {...v,fields};});setSelected(target);}
   function add(def:FieldDefinition){let sequence=1;while(draft.fields.some(item=>item.field_key===`${def.type}_${sequence}`))sequence++;const field=freshField(def,sequence-1);setDraft(v=>({...v,fields:[...v.fields,field]}));setSelected(draft.fields.length);}
   async function save(){setSaving(true);setMessage('');try{const saved=draft.id?await api.updateForm(draft.id,draft):await api.createForm(draft);onChange(draft.id?items.map(x=>x.id===saved.id?saved:x):[...items,saved]);setDraft(saved);setActiveId(saved.id??null);setMessage('Formulario guardado correctamente.');}catch(e){setMessage((e as Error).message);}finally{setSaving(false);}}
-  async function remove(){if(!draft.id||!confirm(`¿Eliminar el formulario "${draft.name}"?`))return;await api.deleteForm(draft.id);const next=items.filter(x=>x.id!==draft.id);onChange(next);if(next[0])open(next[0]);else create();}
+  async function remove(){if(!draft.id||!await confirm({message:`¿Eliminar el formulario "${draft.name}"?`,danger:true,confirmLabel:'Eliminar'}))return;await api.deleteForm(draft.id);const next=items.filter(x=>x.id!==draft.id);onChange(next);if(next[0])open(next[0]);else create();}
   const field=selected===null?null:draft.fields[selected];
   return <div className="if-builder-shell">
     <aside className="if-library"><div className="if-pane-title"><div><span>Formularios</span><b>Guardados por key</b></div><button onClick={create} title="Nuevo formulario"><Plus size={16}/></button></div><div className="if-library-list">{items.map(item=><button key={item.id} className={activeId===item.id?'active':''} onClick={()=>open(item)}><FormInput size={16}/><span><b>{item.name}</b><code>{item.form_key}</code></span><em>{item.fields.length}</em></button>)}{!items.length&&<p>Aún no hay formularios guardados.</p>}</div></aside>
@@ -141,6 +143,7 @@ function FieldInspector({field,columns,tables,onChange,onClose}:{field:BuilderFo
 }
 
 function ViewDesigner({tables,items,onChange}:{tables:SchemaTable[];items:BuilderView[];onChange:(v:BuilderView[])=>void}){
+  const confirm = useConfirm();
   const [activeId,setActiveId]=useState<number|null>(items[0]?.id??null); const [draft,setDraft]=useState<BuilderView>(items[0]??freshView());
   const [schema,setSchema]=useState<SchemaColumn[]>([]); const [rows,setRows]=useState<Record<string,unknown>[]>([]); const [selected,setSelected]=useState<number|null>(draft.columns[0]?0:null); const [saving,setSaving]=useState(false); const [message,setMessage]=useState('');
   useEffect(()=>{if(!draft.table_name){setSchema([]);setRows([]);return;}Promise.all([api.schemaTable(draft.table_name),api.browse(draft.table_name,1,'')]).then(([detail,page])=>{setSchema(detail.columns);setRows(page.data.slice(0,5));}).catch(()=>{setSchema([]);setRows([]);});},[draft.table_name]);
@@ -151,7 +154,7 @@ function ViewDesigner({tables,items,onChange}:{tables:SchemaTable[];items:Builde
   function updateColumn(index:number,patch:Partial<BuilderViewColumn>){setDraft(v=>({...v,columns:v.columns.map((c,i)=>i===index?{...c,...patch}:c)}));}
   function move(index:number,dir:-1|1){const target=index+dir;if(target<0||target>=draft.columns.length)return;setDraft(v=>{const columns=[...v.columns];[columns[index],columns[target]]=[columns[target],columns[index]];return {...v,columns};});setSelected(target);}
   async function save(){setSaving(true);setMessage('');try{const saved=draft.id?await api.updateView(draft.id,draft):await api.createView(draft);onChange(draft.id?items.map(x=>x.id===saved.id?saved:x):[...items,saved]);setDraft(saved);setActiveId(saved.id??null);setMessage('Vista guardada correctamente.');}catch(e){setMessage((e as Error).message);}finally{setSaving(false);}}
-  async function remove(){if(!draft.id||!confirm(`¿Eliminar la vista "${draft.name}"?`))return;await api.deleteView(draft.id);const next=items.filter(x=>x.id!==draft.id);onChange(next);if(next[0])open(next[0]);else create();}
+  async function remove(){if(!draft.id||!await confirm({message:`¿Eliminar la vista "${draft.name}"?`,danger:true,confirmLabel:'Eliminar'}))return;await api.deleteView(draft.id);const next=items.filter(x=>x.id!==draft.id);onChange(next);if(next[0])open(next[0]);else create();}
   const column=selected===null?null:draft.columns[selected];
   return <div className="if-builder-shell view-builder">
     <aside className="if-library"><div className="if-pane-title"><div><span>Vistas</span><b>Listados reutilizables</b></div><button onClick={create}><Plus size={16}/></button></div><div className="if-library-list">{items.map(item=><button key={item.id} className={activeId===item.id?'active':''} onClick={()=>open(item)}><Table2 size={16}/><span><b>{item.name}</b><code>{item.view_key}</code></span><em>{item.columns.length}</em></button>)}{!items.length&&<p>Aún no hay vistas guardadas.</p>}</div></aside>

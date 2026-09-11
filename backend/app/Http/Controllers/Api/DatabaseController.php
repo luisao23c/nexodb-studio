@@ -3,11 +3,21 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Builder\AddColumnRequest;
+use App\Http\Requests\Builder\AddIndexRequest;
+use App\Http\Requests\Builder\CreateTableRequest;
+use App\Http\Requests\Builder\ModifyColumnRequest;
+use App\Http\Requests\Builder\SqlConsoleQueryRequest;
 use App\Models\BuilderAuditLog;
 use App\Services\AuditService;
+use App\Services\DynamicTableService;
+use App\Support\SafeIdentifier;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class DatabaseController extends Controller
@@ -52,8 +62,12 @@ class DatabaseController extends Controller
     {
         $this->assertSafeTable($table);
         $payload = $this->editableRowPayload($request, $table);
-        if (in_array('created_at', $this->tableColumns($table), true)) $payload['created_at'] = now();
-        if (in_array('updated_at', $this->tableColumns($table), true)) $payload['updated_at'] = now();
+        if (in_array('created_at', $this->tableColumns($table), true)) {
+            $payload['created_at'] = now();
+        }
+        if (in_array('updated_at', $this->tableColumns($table), true)) {
+            $payload['updated_at'] = now();
+        }
         $id = DB::table($table)->insertGetId($payload);
         $this->audit->log('row.create', 'row', "{$table}#{$id}", null, ['columns' => array_keys($payload)]);
 
@@ -65,24 +79,35 @@ class DatabaseController extends Controller
         $this->assertSafeTable($table);
         abort_unless(DB::table($table)->where('id', $id)->exists(), 404, 'Registro no encontrado.');
         $payload = $this->editableRowPayload($request, $table);
-        if (in_array('updated_at', $this->tableColumns($table), true)) $payload['updated_at'] = now();
+        if (in_array('updated_at', $this->tableColumns($table), true)) {
+            $payload['updated_at'] = now();
+        }
         DB::table($table)->where('id', $id)->update($payload);
         $this->audit->log('row.update', 'row', "{$table}#{$id}", null, ['columns' => array_keys($payload)]);
 
         return response()->json((array) DB::table($table)->where('id', $id)->first());
     }
 
-    /** Run a single read-only SQL statement (SELECT / SHOW / DESCRIBE / EXPLAIN). */
-    public function query(Request $request): JsonResponse
+    /** Run a single read-only SQL statement (SELECT / SHOW / DESCRIBE / EXPLAIN), scoped to nx_ tables. */
+    public function query(SqlConsoleQueryRequest $request): JsonResponse
     {
-        $data = $request->validate(['sql' => 'required|string|max:10000']);
+        $data = $request->validated();
         $sql = trim(preg_replace('/\s+/', ' ', $data['sql']));
         $first = strtoupper(strtok(ltrim($sql), " \t(") ?: '');
-        if (! in_array($first, ['SELECT','SHOW','DESCRIBE','DESC','EXPLAIN'], true)) {
+        if (! in_array($first, ['SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN'], true)) {
             throw ValidationException::withMessages(['sql' => 'Sólo se permiten consultas de lectura (SELECT, SHOW, DESCRIBE, EXPLAIN).']);
         }
         if (preg_match('/;\s*\S/', $sql)) {
             throw ValidationException::withMessages(['sql' => 'Sólo una consulta por ejecución.']);
+        }
+        $this->assertScopedQuery($sql);
+        if ($first === 'SELECT' && ! preg_match('/\bLIMIT\s+\d+/i', $sql)) {
+            $sql .= ' LIMIT 500';
+        }
+        try {
+            DB::statement('SET SESSION MAX_EXECUTION_TIME=5000');
+        } catch (\Throwable) {
+            // Non-MySQL/MariaDB drivers don't support this — safe to ignore.
         }
         $start = microtime(true);
         $rows = collect(DB::select($sql))->take(500)->map(fn ($r) => (array) $r)->values();
@@ -94,14 +119,27 @@ class DatabaseController extends Controller
         ]);
     }
 
-    public function addIndex(Request $request, string $table): JsonResponse
+    /** Reject queries that reference tables/schemas outside nx_* and information_schema. */
+    private function assertScopedQuery(string $sql): void
+    {
+        if (! preg_match_all('/\b(?:FROM|JOIN)\s+`?([a-zA-Z0-9_]+)`?/i', $sql, $matches)) {
+            return;
+        }
+        foreach (array_unique($matches[1]) as $identifier) {
+            if (strtolower($identifier) === 'information_schema' || SafeIdentifier::isValidTableName($identifier)) {
+                continue;
+            }
+            throw ValidationException::withMessages(['sql' => "Sólo se permiten consultas sobre tablas nx_* o information_schema (encontrado: {$identifier})."]);
+        }
+    }
+
+    public function addIndex(AddIndexRequest $request, string $table): JsonResponse
     {
         $this->assertSafeTable($table);
-        $data = $request->validate([
-            'columns' => 'required|array|min:1', 'columns.*' => ['string', 'max:64', 'regex:/^[a-zA-Z0-9_]+$/'],
-            'unique' => 'boolean', 'name' => ['nullable', 'string', 'max:64', 'regex:/^[a-zA-Z0-9_]+$/'],
-        ]);
-        foreach ($data['columns'] as $column) abort_unless(\Illuminate\Support\Facades\Schema::hasColumn($table, $column), 422, "La columna {$column} no existe.");
+        $data = $request->validated();
+        foreach ($data['columns'] as $column) {
+            abort_unless(Schema::hasColumn($table, $column), 422, "La columna {$column} no existe.");
+        }
         $name = ($data['name'] ?? '') ?: (($data['unique'] ?? false) ? 'uniq_' : 'idx_').implode('_', $data['columns']);
         $type = ($data['unique'] ?? false) ? 'UNIQUE' : 'INDEX';
         $cols = implode(', ', array_map(fn ($c) => '`'.str_replace('`', '', $c).'`', $data['columns']));
@@ -126,7 +164,7 @@ class DatabaseController extends Controller
     {
         $this->assertSafeTable($table);
         $data = $request->validate(['name' => 'required|string|max:60']);
-        $new = app(\App\Services\DynamicTableService::class)->safeTableName($data['name']);
+        $new = app(DynamicTableService::class)->safeTableName($data['name']);
         abort_if(! preg_match('/^[a-z][a-z0-9_]{1,54}$/', $new), 422, 'Nombre de tabla inválido.');
         if ($new !== $table) {
             DB::statement("RENAME TABLE `{$table}` TO `{$new}`");
@@ -145,6 +183,8 @@ class DatabaseController extends Controller
         DB::table('builder_permissions')->where('table_name', $table)->delete();
         DB::table('builder_charts')->where('table_name', $table)->delete();
         DB::table('builder_menu_items')->where('target_table', $table)->update(['target_table' => null, 'active' => false]);
+        DB::table('builder_forms')->where('table_name', $table)->delete();
+        DB::table('builder_views')->where('table_name', $table)->delete();
         DB::statement("DROP TABLE IF EXISTS `{$table}`");
         $this->audit->log('table.drop', 'table', $table, "DROP TABLE IF EXISTS `{$table}`");
 
@@ -152,45 +192,33 @@ class DatabaseController extends Controller
     }
 
     /** Add a column directly to any nx_ table (raw DDL path for unmanaged tables). */
-    public function addColumn(Request $request, string $table, \App\Services\DynamicTableService $tables): JsonResponse
+    public function addColumn(AddColumnRequest $request, string $table, DynamicTableService $tables): JsonResponse
     {
         $this->assertSafeTable($table);
-        $data = $request->validate([
-            'name' => 'required|string|max:60',
-            'data_type' => ['required', \Illuminate\Validation\Rule::in(\App\Services\DynamicTableService::DATA_TYPES)],
-            'length' => 'nullable|integer|min:1|max:65535', 'nullable' => 'boolean',
-            'default_value' => 'nullable|string|max:255', 'unique' => 'boolean',
-            'unsigned' => 'boolean', 'comment' => 'nullable|string|max:255',
-            'enum_values' => 'nullable|string|max:500',
-        ]);
+        $data = $request->validated();
         $name = $tables->safeColumnName($data['name']);
-        abort_if(\Illuminate\Support\Facades\Schema::hasColumn($table, $name), 422, 'La columna ya existe.');
+        abort_if(Schema::hasColumn($table, $name), 422, 'La columna ya existe.');
         $tables->addColumnRaw($table, $name, $data);
+        $this->audit->log('column.add', 'column', "{$table}.{$name}");
 
         return response()->json(['ok' => true, 'column' => $name], 201);
     }
 
-    public function modifyColumn(Request $request, string $table, string $column, \App\Services\DynamicTableService $tables): JsonResponse
+    public function modifyColumn(ModifyColumnRequest $request, string $table, string $column, DynamicTableService $tables): JsonResponse
     {
         $this->assertSafeTable($table);
-        $data = $request->validate([
-            'data_type' => ['required', \Illuminate\Validation\Rule::in(\App\Services\DynamicTableService::DATA_TYPES)],
-            'length' => 'nullable|integer|min:1|max:65535', 'nullable' => 'boolean',
-            'default_value' => 'nullable|string|max:255', 'unique' => 'boolean',
-            'unsigned' => 'boolean', 'comment' => 'nullable|string|max:255',
-            'enum_values' => 'nullable|string|max:500',
-        ]);
-        abort_unless(\Illuminate\Support\Facades\Schema::hasColumn($table, $column), 404, 'La columna no existe.');
+        $data = $request->validated();
+        abort_unless(Schema::hasColumn($table, $column), 404, 'La columna no existe.');
         $tables->modifyColumn($table, $column, $data);
         $this->audit->log('column.modify', 'column', "{$table}.{$column}");
 
         return response()->json(['ok' => true]);
     }
 
-    public function dropColumn(string $table, string $column, \App\Services\DynamicTableService $tables): JsonResponse
+    public function dropColumn(string $table, string $column, DynamicTableService $tables): JsonResponse
     {
         $this->assertSafeTable($table);
-        abort_unless(\Illuminate\Support\Facades\Schema::hasColumn($table, $column), 404, 'La columna no existe.');
+        abort_unless(Schema::hasColumn($table, $column), 404, 'La columna no existe.');
         $tables->dropColumn($table, $column);
         $this->audit->log('column.drop', 'column', "{$table}.{$column}");
 
@@ -198,30 +226,12 @@ class DatabaseController extends Controller
     }
 
     /** Create a brand-new nx_ table with initial columns. */
-    public function createTable(Request $request, \App\Services\DynamicTableService $tables): JsonResponse
+    public function createTable(CreateTableRequest $request, DynamicTableService $tables): JsonResponse
     {
-        $data = $request->validate([
-            'name' => 'required|string|max:60',
-            'columns' => 'nullable|array|max:30',
-            'columns.*.name' => 'required|string|max:60',
-            'columns.*.data_type' => ['required', \Illuminate\Validation\Rule::in(\App\Services\DynamicTableService::DATA_TYPES)],
-            'columns.*.length' => 'nullable|integer|min:1|max:65535',
-            'columns.*.nullable' => 'boolean',
-            'columns.*.unique' => 'boolean',
-            'columns.*.unsigned' => 'boolean',
-            'columns.*.default_value' => 'nullable|string|max:255',
-            'columns.*.comment' => 'nullable|string|max:255',
-            'columns.*.enum_values' => 'nullable|string|max:500',
-            'add_timestamps' => 'boolean',
-            'add_soft_deletes' => 'boolean',
-            'use_uuid_pk' => 'boolean',
-            'engine' => ['nullable', \Illuminate\Validation\Rule::in(['InnoDB', 'MyISAM'])],
-            'charset' => ['nullable', \Illuminate\Validation\Rule::in(['utf8mb4', 'utf8', 'latin1', 'ascii'])],
-            'collation' => ['nullable', \Illuminate\Validation\Rule::in(['utf8mb4_unicode_ci', 'utf8mb4_general_ci', 'utf8mb4_bin', 'utf8_general_ci'])],
-        ]);
+        $data = $request->validated();
         $name = $tables->safeTableName($data['name']);
-        abort_if(\Illuminate\Support\Facades\Schema::hasTable($name), 422, 'La tabla ya existe.');
-        \Illuminate\Support\Facades\Schema::create($name, function (\Illuminate\Database\Schema\Blueprint $t) use ($data) {
+        abort_if(Schema::hasTable($name), 422, 'La tabla ya existe.');
+        Schema::create($name, function (Blueprint $t) use ($data) {
             $t->engine = $data['engine'] ?? 'InnoDB';
             $t->charset = $data['charset'] ?? 'utf8mb4';
             $t->collation = $data['collation'] ?? 'utf8mb4_unicode_ci';
@@ -231,8 +241,12 @@ class DatabaseController extends Controller
             } else {
                 $t->id();
             }
-            if ($data['add_timestamps'] ?? true) { $t->timestamps(); }
-            if ($data['add_soft_deletes'] ?? false) { $t->softDeletes(); }
+            if ($data['add_timestamps'] ?? true) {
+                $t->timestamps();
+            }
+            if ($data['add_soft_deletes'] ?? false) {
+                $t->softDeletes();
+            }
         });
         foreach ($data['columns'] ?? [] as $col) {
             $colName = $tables->safeColumnName($col['name']);
@@ -279,7 +293,9 @@ class DatabaseController extends Controller
                 $dump .= "INSERT INTO `{$table}` ({$cols}) VALUES ({$values});\n";
             }
 
-            return response()->streamDownload(function () use ($dump) { echo $dump; }, "{$table}_{$stamp}.sql", ['Content-Type' => 'application/sql']);
+            return response()->streamDownload(function () use ($dump) {
+                echo $dump;
+            }, "{$table}_{$stamp}.sql", ['Content-Type' => 'application/sql']);
         }
 
         $this->audit->log('export', 'table', $table, null, ['format' => 'csv', 'rows' => count($rows)]);
@@ -288,7 +304,9 @@ class DatabaseController extends Controller
             $out = fopen('php://output', 'w');
             fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM for Excel
             fputcsv($out, $columns);
-            foreach ($rows as $row) fputcsv($out, array_map(fn ($v) => $v === null ? '' : (string) $v, $row));
+            foreach ($rows as $row) {
+                fputcsv($out, array_map(fn ($v) => $v === null ? '' : (string) $v, $row));
+            }
             fclose($out);
         }, "{$table}_{$stamp}.csv", ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
@@ -299,29 +317,54 @@ class DatabaseController extends Controller
         $this->assertSafeTable($table);
         $request->validate(['file' => 'required|file|max:5120|mimetypes:text/csv,text/plain,application/csv']);
         $handle = fopen($request->file('file')->getRealPath(), 'r');
-        if ($handle === false) throw ValidationException::withMessages(['file' => 'No se pudo leer el archivo.']);
+        if ($handle === false) {
+            throw ValidationException::withMessages(['file' => 'No se pudo leer el archivo.']);
+        }
 
         $header = fgetcsv($handle);
-        if (! $header) throw ValidationException::withMessages(['file' => 'El CSV está vacío.']);
+        if (! $header) {
+            throw ValidationException::withMessages(['file' => 'El CSV está vacío.']);
+        }
         $header = array_map(fn ($h) => trim(str_replace("\xEF\xBB\xBF", '', (string) $h)), $header);
 
         $tableColumns = collect(DB::select("SHOW COLUMNS FROM `{$table}`"))->pluck('Field')->all();
         $invalid = array_diff($header, $tableColumns);
-        if ($invalid !== []) throw ValidationException::withMessages(['file' => 'Columnas desconocidas: '.implode(', ', $invalid).'. Columnas válidas: '.implode(', ', $tableColumns)]);
+        if ($invalid !== []) {
+            throw ValidationException::withMessages(['file' => 'Columnas desconocidas: '.implode(', ', $invalid).'. Columnas válidas: '.implode(', ', $tableColumns)]);
+        }
 
-        $inserted = 0; $errors = []; $line = 1;
+        $inserted = 0;
+        $errors = [];
+        $line = 1;
         while (($raw = fgetcsv($handle)) !== false) {
             $line++;
-            if (count($header) !== count($raw)) { $errors[] = "Línea {$line}: número de columnas incorrecto"; continue; }
+            if (count($header) !== count($raw)) {
+                $errors[] = "Línea {$line}: número de columnas incorrecto";
+
+                continue;
+            }
             $row = array_combine($header, array_map(fn ($v) => ($v === '' ? null : $v), $raw));
-            if (isset($row['id']) && DB::table($table)->where('id', $row['id'])->exists()) { $errors[] = "Línea {$line}: id {$row['id']} ya existe"; continue; }
+            if (isset($row['id']) && DB::table($table)->where('id', $row['id'])->exists()) {
+                $errors[] = "Línea {$line}: id {$row['id']} ya existe";
+
+                continue;
+            }
             try {
-                if (isset($row['id'])) unset($row['id']);
-                if (in_array('created_at', $tableColumns, true) && ! array_key_exists('created_at', $row)) $row['created_at'] = now();
-                if (in_array('updated_at', $tableColumns, true) && ! array_key_exists('updated_at', $row)) $row['updated_at'] = now();
+                if (isset($row['id'])) {
+                    unset($row['id']);
+                }
+                if (in_array('created_at', $tableColumns, true) && ! array_key_exists('created_at', $row)) {
+                    $row['created_at'] = now();
+                }
+                if (in_array('updated_at', $tableColumns, true) && ! array_key_exists('updated_at', $row)) {
+                    $row['updated_at'] = now();
+                }
                 DB::table($table)->insert($row);
                 $inserted++;
-            } catch (\Throwable $e) { $errors[] = "Línea {$line}: ".$e->getMessage(); }
+            } catch (\Throwable $e) {
+                Log::error('CSV import row failed', ['table' => $table, 'line' => $line, 'error' => $e->getMessage()]);
+                $errors[] = "Línea {$line}: no se pudo insertar la fila (revisa los tipos de dato).";
+            }
         }
         fclose($handle);
         $this->audit->log('import', 'table', $table, null, ['inserted' => $inserted, 'errors' => count($errors)]);
@@ -333,8 +376,12 @@ class DatabaseController extends Controller
     public function auditIndex(Request $request): JsonResponse
     {
         $q = BuilderAuditLog::query()->orderByDesc('created_at')->limit(200);
-        if ($action = $request->query('action')) $q->where('action', $action);
-        if ($target = $request->query('target')) $q->where('target', 'like', "%{$target}%");
+        if ($action = $request->query('action')) {
+            $q->where('action', $action);
+        }
+        if ($target = $request->query('target')) {
+            $q->where('target', 'like', "%{$target}%");
+        }
 
         return response()->json($q->get());
     }
@@ -352,7 +399,7 @@ class DatabaseController extends Controller
         $totalRows = (int) $tables->sum(fn ($t) => (int) ($t->rows ?? 0));
         $totalSize = round((float) $tables->sum(fn ($t) => (float) $t->size_kb), 1);
         $recent = BuilderAuditLog::orderByDesc('created_at')->limit(8)->get(['action', 'target', 'created_at']);
-        $last7 = BuilderAuditLog::selectRaw("DATE(created_at) as d, COUNT(*) as c")
+        $last7 = BuilderAuditLog::selectRaw('DATE(created_at) as d, COUNT(*) as c')
             ->where('created_at', '>=', now()->subDays(7))->groupBy('d')->orderBy('d')->get();
 
         return response()->json([
@@ -376,13 +423,10 @@ class DatabaseController extends Controller
 
     private function assertSafeTable(string $table): void
     {
-        if (! preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
-            throw ValidationException::withMessages(['table' => 'Nombre de tabla inválido.']);
-        }
-        if (! str_starts_with($table, 'nx_')) {
+        if (! SafeIdentifier::isValidTableName($table)) {
             throw ValidationException::withMessages(['table' => 'Sólo se permiten tablas con prefijo nx_.']);
         }
-        abort_unless(\Illuminate\Support\Facades\Schema::hasTable($table), 404, 'Tabla no encontrada.');
+        abort_unless(Schema::hasTable($table), 404, 'Tabla no encontrada.');
     }
 
     private function tableColumns(string $table): array
@@ -395,17 +439,27 @@ class DatabaseController extends Controller
         $definitions = collect(DB::select("SHOW FULL COLUMNS FROM `{$table}`"));
         $editable = $definitions->reject(fn ($column) => in_array($column->Field, ['id', 'created_at', 'updated_at', 'deleted_at'], true) || str_contains(strtolower((string) $column->Extra), 'auto_increment'));
         $unknown = array_diff(array_keys($request->all()), $editable->pluck('Field')->all());
-        if ($unknown !== []) throw ValidationException::withMessages(['data' => 'Columnas no permitidas: '.implode(', ', $unknown)]);
+        if ($unknown !== []) {
+            throw ValidationException::withMessages(['data' => 'Columnas no permitidas: '.implode(', ', $unknown)]);
+        }
 
         $payload = [];
         foreach ($editable as $column) {
-            if (! $request->exists($column->Field)) continue;
+            if (! $request->exists($column->Field)) {
+                continue;
+            }
             $value = $request->input($column->Field);
-            if ($value === '' && ($column->Null === 'YES' || $column->Default !== null)) $value = null;
-            if (preg_match('/^tinyint\(1\)/i', $column->Type)) $value = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? 0;
+            if ($value === '' && ($column->Null === 'YES' || $column->Default !== null)) {
+                $value = null;
+            }
+            if (preg_match('/^tinyint\(1\)/i', $column->Type)) {
+                $value = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? 0;
+            }
             $payload[$column->Field] = $value;
         }
-        if ($payload === []) throw ValidationException::withMessages(['data' => 'No hay valores para guardar.']);
+        if ($payload === []) {
+            throw ValidationException::withMessages(['data' => 'No hay valores para guardar.']);
+        }
 
         return $payload;
     }

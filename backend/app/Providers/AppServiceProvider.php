@@ -9,14 +9,18 @@ use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
-    public function register(): void
-    {
-    }
+    public function register(): void {}
 
     public function boot(): void
     {
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(60)->by($request->ip());
+        });
+
+        // The current project, resolved by ResolveProjectMiddleware from the X-Project-Id header.
+        Request::macro('project', function () {
+            /** @var Request $this */
+            return $this->attributes->get('project');
         });
     }
 }

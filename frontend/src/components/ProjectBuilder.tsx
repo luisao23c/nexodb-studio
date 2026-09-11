@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, LoaderCircle, Check, X, Monitor, Tablet, Smartphone, Layers, Maximize2, Minimize2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, LoaderCircle, Check, X, Monitor, Tablet, Smartphone, Layers, Maximize2, Minimize2, ExternalLink, Download } from 'lucide-react';
 import { api } from '../api/client';
-import type { BuilderForm, BuilderRoute, BuilderView } from '../types';
+import type { BuilderForm, BuilderRoute, BuilderView, Project } from '../types';
 import { ComponentPalette, ComponentDropZone, renderComponents } from './ComponentPalette';
 import type { PageComponent } from './ComponentPalette';
+import { useConfirm, useToast } from './ui/DialogProvider';
 
 /* ================= Route Tree Node ================= */
 function RouteNode({route,depth,selectedId,onSelect,onToggleAdd,onDelete,onRename,addingToParent,newChildName,setNewChildName,onConfirmAdd,busy}:{route:BuilderRoute;depth:number;selectedId:number|null;onSelect:(r:BuilderRoute)=>void;onToggleAdd:(parentId:number)=>void;onDelete:(id:number)=>void;onRename:(id:number,name:string)=>void;addingToParent:number|null;newChildName:string;setNewChildName:(v:string)=>void;onConfirmAdd:()=>void;busy:boolean}){
@@ -207,7 +208,9 @@ function ProjectPreview({routes,paths,forms,views,onClose}:{routes:BuilderRoute[
 }
 
 /* ================= Main ProjectBuilder ================= */
-export default function ProjectBuilder(){
+export default function ProjectBuilder({project}:{project?:Project|null}){
+  const confirm = useConfirm();
+  const showToast = useToast();
   const [routes,setRoutes] = useState<BuilderRoute[]>([]);
   const [flatRoutes,setFlatRoutes] = useState<BuilderRoute[]>([]);
   const [selected,setSelected] = useState<BuilderRoute|null>(null);
@@ -220,6 +223,7 @@ export default function ProjectBuilder(){
   const [newRouteName,setNewRouteName] = useState('');
   const [addingToParent,setAddingToParent] = useState<number|null>(null);
   const [newChildName,setNewChildName] = useState('');
+  const [exporting,setExporting] = useState(false);
 
   const load = useCallback(async()=>{
     const [tree,flat,tbls,savedForms,savedViews] = await Promise.all([api.routes(),api.routesFlat(),api.schemaTables(),api.forms(),api.views()]);
@@ -239,7 +243,7 @@ export default function ProjectBuilder(){
     else{setAddingToParent(parentId);setNewChildName('');}
   }
 
-  async function deleteRoute(id:number){ if(!confirm('¿Eliminar esta ruta y sus hijos?'))return; setBusy(true);
+  async function deleteRoute(id:number){ if(!await confirm({message:'¿Eliminar esta ruta y sus hijos?',danger:true,confirmLabel:'Eliminar'}))return; setBusy(true);
     try{ await api.deleteRoute(id); if(selected?.id===id){setSelected(null);setShowConfig(false);} await load(); }finally{ setBusy(false); } }
 
   async function renameRoute(id:number,name:string){ setBusy(true);
@@ -247,12 +251,26 @@ export default function ProjectBuilder(){
 
   async function saveRoute(id:number,data:Partial<BuilderRoute>){ await api.updateRoute(id,data); await load(); setSelected(prev=>prev&&prev.id===id?{...prev,...data}:prev); }
 
+  async function exportProject(){
+    if(!project){showToast('Selecciona un proyecto primero.','error');return;}
+    setExporting(true);
+    try{ await api.exportProject(project); showToast('Proyecto exportado.','success'); }
+    catch(err){ showToast(err instanceof Error?err.message:'No se pudo exportar el proyecto.','error'); }
+    finally{ setExporting(false); }
+  }
+
   return <div className="project-builder">
     <div className="pb-left">
       <div className="pb-header">
         <div><span>Arquitectura visual</span><h2>Constructor de Proyectos</h2></div>
         <div className="pb-header-actions">
           <button className={`pb-preview-button ${showPreview?'active':''}`} title="Vista previa del proyecto" onClick={()=>setShowPreview(!showPreview)}>{showPreview?<EyeOff size={15}/>:<Eye size={15}/>}<span>{showPreview?'Volver':'Previsualizar'}</span></button>
+          <button className="pb-preview-button" title="Vista previa publicada" onClick={()=>{
+            if(!project){showToast('Selecciona un proyecto primero.','error');return;}
+            if(!project.is_public){showToast('Este proyecto es privado. Actívalo como público desde el selector de proyectos para compartir el link.','error');return;}
+            window.open(`${window.location.origin}${window.location.pathname}#/preview/${project.id}`,'_blank');
+          }}><ExternalLink size={15}/><span>Vista publicada</span></button>
+          <button className="pb-preview-button" title="Exportar proyecto como app Laravel + React" disabled={exporting} onClick={()=>void exportProject()}>{exporting?<LoaderCircle size={15} className="spin"/>:<Download size={15}/>}<span>{exporting?'Exportando…':'Exportar proyecto'}</span></button>
         </div>
       </div>
       <div className="pb-new-route">
@@ -276,13 +294,13 @@ export default function ProjectBuilder(){
   </div>;
 }
 
-function buildRoutePaths(routes:BuilderRoute[]){
+export function buildRoutePaths(routes:BuilderRoute[]){
   const byId=new Map(routes.map(route=>[route.id,route])); const paths:Record<number,string>={};
   routes.forEach(route=>{const parts=[route.slug];let parent=route.parent_id?byId.get(route.parent_id):undefined;const visited=new Set<number>([route.id]);while(parent&&!visited.has(parent.id)){visited.add(parent.id);parts.unshift(parent.slug);parent=parent.parent_id?byId.get(parent.parent_id):undefined;}paths[route.id]=`/${parts.join('/')}`;});
   return paths;
 }
 
-function findFirstVisibleRoute(routes:BuilderRoute[]):BuilderRoute|undefined{
+export function findFirstVisibleRoute(routes:BuilderRoute[]):BuilderRoute|undefined{
   for(const route of routes){if(route.active&&route.visible_in_menu)return route;const child=findFirstVisibleRoute(route.children??[]);if(child)return child;}
 }
 

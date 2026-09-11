@@ -15,57 +15,66 @@ use Illuminate\Validation\ValidationException;
 class InterfaceBuilderController extends Controller
 {
     private const FIELD_TYPES = ['text', 'textarea', 'number', 'email', 'password', 'date', 'datetime', 'autocomplete', 'select', 'multiselect', 'checkbox', 'radio', 'switch', 'file', 'hidden', 'heading', 'divider', 'button'];
+
     private const DISPLAY_TYPES = ['text', 'number', 'money', 'date', 'datetime', 'badge', 'boolean', 'image', 'link', 'email', 'json'];
 
-    public function forms(): JsonResponse
+    public function forms(Request $request): JsonResponse
     {
-        return response()->json(BuilderForm::with('fields')->orderBy('name')->get());
+        return response()->json($request->project()->forms()->with('fields')->orderBy('name')->get());
     }
 
     public function storeForm(Request $request): JsonResponse
     {
-        return $this->saveForm($request, new BuilderForm, 201);
+        return $this->saveForm($request, new BuilderForm(['project_id' => $request->project()->id]), 201);
     }
 
-    public function formByKey(string $key): JsonResponse
+    public function formByKey(Request $request, string $key): JsonResponse
     {
-        return response()->json(BuilderForm::with('fields')->where('form_key', $key)->firstOrFail());
+        return response()->json($request->project()->forms()->with('fields')->where('form_key', $key)->firstOrFail());
     }
 
     public function updateForm(Request $request, BuilderForm $form): JsonResponse
     {
+        abort_unless($form->project_id === $request->project()->id, 404);
+
         return $this->saveForm($request, $form);
     }
 
-    public function destroyForm(BuilderForm $form): JsonResponse
+    public function destroyForm(Request $request, BuilderForm $form): JsonResponse
     {
+        abort_unless($form->project_id === $request->project()->id, 404);
         $form->delete();
+
         return response()->json(null, 204);
     }
 
-    public function views(): JsonResponse
+    public function views(Request $request): JsonResponse
     {
-        return response()->json(BuilderView::with('columns')->orderBy('name')->get());
+        return response()->json($request->project()->views()->with('columns')->orderBy('name')->get());
     }
 
     public function storeView(Request $request): JsonResponse
     {
-        return $this->saveView($request, new BuilderView, 201);
+        return $this->saveView($request, new BuilderView(['project_id' => $request->project()->id]), 201);
     }
 
-    public function viewByKey(string $key): JsonResponse
+    public function viewByKey(Request $request, string $key): JsonResponse
     {
-        return response()->json(BuilderView::with('columns')->where('view_key', $key)->firstOrFail());
+        return response()->json($request->project()->views()->with('columns')->where('view_key', $key)->firstOrFail());
     }
 
     public function updateView(Request $request, BuilderView $view): JsonResponse
     {
+        abort_unless($view->project_id === $request->project()->id, 404);
+
         return $this->saveView($request, $view);
     }
 
-    public function destroyView(BuilderView $view): JsonResponse
+    public function destroyView(Request $request, BuilderView $view): JsonResponse
     {
+        abort_unless($view->project_id === $request->project()->id, 404);
         $view->delete();
+
         return response()->json(null, 204);
     }
 
@@ -100,7 +109,7 @@ class InterfaceBuilderController extends Controller
     {
         $data = $request->validate([
             'name' => 'required|string|max:100',
-            'form_key' => ['required', 'regex:/^[a-z][a-z0-9_.-]*$/', 'max:100', Rule::unique('builder_forms', 'form_key')->ignore($form->id)],
+            'form_key' => ['required', 'regex:/^[a-z][a-z0-9_.-]*$/', 'max:100', Rule::unique('builder_forms', 'form_key')->where('project_id', $request->project()->id)->ignore($form->id)],
             'table_name' => 'required|string|max:100',
             'description' => 'nullable|string|max:255',
             'layout_columns' => 'required|integer|between:1,12',
@@ -164,7 +173,7 @@ class InterfaceBuilderController extends Controller
     {
         $data = $request->validate([
             'name' => 'required|string|max:100',
-            'view_key' => ['required', 'regex:/^[a-z][a-z0-9_.-]*$/', 'max:100', Rule::unique('builder_views', 'view_key')->ignore($view->id)],
+            'view_key' => ['required', 'regex:/^[a-z][a-z0-9_.-]*$/', 'max:100', Rule::unique('builder_views', 'view_key')->where('project_id', $request->project()->id)->ignore($view->id)],
             'table_name' => 'required|string|max:100',
             'description' => 'nullable|string|max:255',
             'primary_key' => 'required|string|max:100',

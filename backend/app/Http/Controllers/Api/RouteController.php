@@ -6,24 +6,26 @@ use App\Http\Controllers\Controller;
 use App\Models\BuilderRoute;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class RouteController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $all = BuilderRoute::orderBy('sort_order')->get();
+        $all = $request->project()->routes()->orderBy('sort_order')->get();
         $byId = $all->keyBy('id');
         $roots = collect();
 
         foreach ($all as $route) {
-            $route->children = collect();
+            $route->setRelation('children', collect());
         }
 
         foreach ($all as $route) {
             if ($route->parent_id && $byId->has($route->parent_id)) {
                 $byId[$route->parent_id]->children->push($route);
-            } elseif (!$route->parent_id) {
+            } elseif (! $route->parent_id) {
                 $roots->push($route);
             }
         }
@@ -31,18 +33,21 @@ class RouteController extends Controller
         return response()->json(['routes' => $roots]);
     }
 
-    public function flat(): JsonResponse
+    public function flat(Request $request): JsonResponse
     {
-        $routes = BuilderRoute::orderBy('sort_order')->orderBy('parent_id')->get();
+        $routes = $request->project()->routes()->orderBy('sort_order')->orderBy('parent_id')->get();
+
         return response()->json(['routes' => $routes]);
     }
 
     public function store(Request $request): JsonResponse
     {
+        $project = $request->project();
+
         $data = $request->validate([
             'name' => 'required|string|max:100',
             'slug' => 'nullable|string|max:100',
-            'parent_id' => 'nullable|integer|exists:nx_routes,id',
+            'parent_id' => ['nullable', 'integer', Rule::exists('nx_routes', 'id')->where('project_id', $project->id)],
             'icon' => 'nullable|string|max:50',
             'content_type' => 'required|in:table,form,chart,page,redirect,divider,empty',
             'content_config' => 'nullable|array',
@@ -53,16 +58,16 @@ class RouteController extends Controller
         ]);
 
         $data['slug'] = $data['slug'] ?? null ?: Str::slug($data['name']);
-        $data['sort_order'] = BuilderRoute::where('parent_id', $data['parent_id'] ?? null)->max('sort_order') + 1;
+        $data['sort_order'] = $project->routes()->where('parent_id', $data['parent_id'] ?? null)->max('sort_order') + 1;
 
-        $route = BuilderRoute::create($data);
+        $route = $project->routes()->create($data);
 
         return response()->json(['ok' => true, 'route' => $route], 201);
     }
 
     public function update(Request $request, string $id): JsonResponse
     {
-        $route = BuilderRoute::findOrFail($id);
+        $route = $request->project()->routes()->findOrFail($id);
         $data = $request->validate([
             'name' => 'sometimes|string|max:100',
             'slug' => 'sometimes|string|max:100',
@@ -77,7 +82,7 @@ class RouteController extends Controller
             'sort_order' => 'nullable|integer',
         ]);
 
-        if (isset($data['name']) && !isset($data['slug'])) {
+        if (isset($data['name']) && ! isset($data['slug'])) {
             $data['slug'] = Str::slug($data['name']);
         }
 
@@ -88,6 +93,8 @@ class RouteController extends Controller
 
     public function reorder(Request $request): JsonResponse
     {
+        $project = $request->project();
+
         $data = $request->validate([
             'order' => 'required|array',
             'order.*.id' => 'required|integer',
@@ -96,7 +103,7 @@ class RouteController extends Controller
         ]);
 
         foreach ($data['order'] as $item) {
-            BuilderRoute::where('id', $item['id'])->update([
+            BuilderRoute::where('id', $item['id'])->where('project_id', $project->id)->update([
                 'parent_id' => $item['parent_id'],
                 'sort_order' => $item['sort_order'],
             ]);
@@ -105,37 +112,38 @@ class RouteController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
-        $route = BuilderRoute::findOrFail($id);
+        $route = $request->project()->routes()->findOrFail($id);
 
         // Move children to parent
-        BuilderRoute::where('parent_id', $id)->update(['parent_id' => $route->parent_id]);
+        BuilderRoute::where('parent_id', $id)->where('project_id', $route->project_id)->update(['parent_id' => $route->parent_id]);
 
         $route->delete();
 
         return response()->json(['ok' => true]);
     }
 
-    public function preview(): JsonResponse
+    public function preview(Request $request): JsonResponse
     {
-        $all = BuilderRoute::where('active', true)->orderBy('sort_order')->get();
+        $project = $request->project();
+        $all = $project->routes()->where('active', true)->orderBy('sort_order')->get();
         $byId = $all->keyBy('id');
         $roots = collect();
 
         foreach ($all as $route) {
-            $route->children = collect();
+            $route->setRelation('children', collect());
         }
 
         foreach ($all as $route) {
             if ($route->parent_id && $byId->has($route->parent_id)) {
                 $byId[$route->parent_id]->children->push($route);
-            } elseif (!$route->parent_id) {
+            } elseif (! $route->parent_id) {
                 $roots->push($route);
             }
         }
 
-        $flat = BuilderRoute::where('active', true)->orderBy('sort_order')->get();
+        $flat = $project->routes()->where('active', true)->orderBy('sort_order')->get();
         $pathMap = [];
         foreach ($flat as $r) {
             $pathMap[$r->id] = $this->buildPath($r, $flat);
@@ -144,7 +152,7 @@ class RouteController extends Controller
         return response()->json([
             'routes' => $roots,
             'paths' => $pathMap,
-            'tables' => \Illuminate\Support\Facades\DB::select("SHOW TABLES LIKE 'nx_%'"),
+            'tables' => DB::select("SHOW TABLES LIKE 'nx_%'"),
         ]);
     }
 
@@ -156,6 +164,7 @@ class RouteController extends Controller
             array_unshift($parts, $current->slug);
             $current = $all->firstWhere('id', $current->parent_id);
         }
-        return '/' . implode('/', $parts);
+
+        return '/'.implode('/', $parts);
     }
 }

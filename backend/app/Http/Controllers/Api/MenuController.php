@@ -14,15 +14,15 @@ use Illuminate\Validation\Rule;
 
 class MenuController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        return response()->json(BuilderMenu::with('items')->orderBy('sort_order')->get());
+        return response()->json($request->project()->menus()->with('items')->orderBy('sort_order')->get());
     }
 
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate(['name' => 'required|string|max:60']);
-        $menu = BuilderMenu::create([
+        $menu = $request->project()->menus()->create([
             'name' => $data['name'],
             'slug' => Str::slug($data['name']),
             'icon' => $request->input('icon', 'folder'),
@@ -33,6 +33,7 @@ class MenuController extends Controller
 
     public function update(Request $request, BuilderMenu $menu): JsonResponse
     {
+        abort_unless($menu->project_id === $request->project()->id, 404);
         $data = $request->validate([
             'name' => 'sometimes|string|max:60', 'icon' => 'nullable|string|max:30',
             'sort_order' => 'integer|min:0', 'active' => 'boolean',
@@ -42,8 +43,9 @@ class MenuController extends Controller
         return response()->json($menu->fresh()->load('items'));
     }
 
-    public function destroy(BuilderMenu $menu): JsonResponse
+    public function destroy(Request $request, BuilderMenu $menu): JsonResponse
     {
+        abort_unless($menu->project_id === $request->project()->id, 404);
         $menu->delete();
 
         return response()->json(null, 204);
@@ -51,6 +53,7 @@ class MenuController extends Controller
 
     public function storeItem(Request $request, BuilderMenu $menu): JsonResponse
     {
+        abort_unless($menu->project_id === $request->project()->id, 404);
         $data = $request->validate([
             'label' => 'required|string|max:80',
             'parent_id' => 'nullable|exists:builder_menu_items,id',
@@ -63,7 +66,9 @@ class MenuController extends Controller
             'sort_order' => 'nullable|integer|min:0',
             'role_ids' => 'nullable|array', 'role_ids.*' => 'integer|exists:builder_roles,id',
         ]);
-        if (($data['target_type'] ?? '') === 'table') abort_unless(Schema::hasTable($data['target_table']), 422, 'La tabla seleccionada no existe.');
+        if (($data['target_type'] ?? '') === 'table') {
+            abort_unless(Schema::hasTable($data['target_table']), 422, 'La tabla seleccionada no existe.');
+        }
 
         $item = BuilderMenuItem::create([
             'menu_id' => $menu->id,
@@ -84,7 +89,7 @@ class MenuController extends Controller
 
     public function updateItem(Request $request, BuilderMenu $menu, BuilderMenuItem $item): JsonResponse
     {
-        abort_unless($item->menu_id === $menu->id, 404);
+        abort_unless($menu->project_id === $request->project()->id && $item->menu_id === $menu->id, 404);
         $data = $request->validate([
             'label' => 'sometimes|string|max:80', 'icon' => 'nullable|string|max:30',
             'target_type' => ['sometimes', Rule::in(['table', 'page', 'chart_dashboard', 'url'])],
@@ -106,9 +111,9 @@ class MenuController extends Controller
         return response()->json($item->fresh());
     }
 
-    public function destroyItem(BuilderMenu $menu, BuilderMenuItem $item): JsonResponse
+    public function destroyItem(Request $request, BuilderMenu $menu, BuilderMenuItem $item): JsonResponse
     {
-        abort_unless($item->menu_id === $menu->id, 404);
+        abort_unless($menu->project_id === $request->project()->id && $item->menu_id === $menu->id, 404);
         $item->children()->delete();
         $item->delete();
 
@@ -119,13 +124,17 @@ class MenuController extends Controller
     public function render(Request $request): JsonResponse
     {
         $roleIds = array_map('intval', explode(',', (string) $request->query('roles', '')));
-        $menus = BuilderMenu::with('items')->where('active', true)->orderBy('sort_order')->get();
+        $menus = $request->project()->menus()->with('items')->where('active', true)->orderBy('sort_order')->get();
 
         $filtered = $menus->map(function (BuilderMenu $menu) use ($roleIds) {
             $items = $menu->items->filter(function (BuilderMenuItem $item) use ($roleIds) {
-                if (! $item->active) return false;
+                if (! $item->active) {
+                    return false;
+                }
                 $required = $item->required_role_ids;
-                if (is_array($required) && $required !== [] && empty(array_intersect($required, $roleIds))) return false;
+                if (is_array($required) && $required !== [] && empty(array_intersect($required, $roleIds))) {
+                    return false;
+                }
 
                 return true;
             })->map(fn (BuilderMenuItem $i) => [
@@ -141,6 +150,7 @@ class MenuController extends Controller
 
     public function reorderItems(Request $request, BuilderMenu $menu): JsonResponse
     {
+        abort_unless($menu->project_id === $request->project()->id, 404);
         $data = $request->validate(['ids' => 'required|array', 'ids.*' => 'integer|exists:builder_menu_items,id']);
         DB::transaction(function () use ($data, $menu) {
             foreach (array_values($data['ids']) as $index => $id) {

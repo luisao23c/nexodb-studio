@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowRight, Braces, Calendar, Check, CheckCircle, ChevronLeft, ChevronRight, CircleHelp, Clock, Code2, Database, Download, Eraser, Eye, GitBranch, Hash, Key, Link, ListChecks, LoaderCircle, Mail, Package, Pencil, Phone, Play, Plus, ReceiptText, RefreshCw, Search, Settings2, Sigma, Sparkles, Table2, Text, Trash2, Unlink, Upload, User, Users, X, History as HistoryIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Braces, Calendar, Check, CheckCircle, ChevronLeft, ChevronRight, CircleHelp, Clock, Code2, Database, Download, Eraser, Eye, GitBranch, Hash, Key, Link, ListChecks, LoaderCircle, Mail, Package, Pencil, Phone, Play, Plus, ReceiptText, RefreshCw, Search, Settings2, Sigma, Sparkles, Table2, Text, Trash2, Unlink, Upload, Users, X, History as HistoryIcon } from 'lucide-react';
 import { api } from '../api/client';
 import { AuditTab, DbDashboard } from './DbDashboard';
+import { useConfirm, usePrompt, useToast } from './ui/DialogProvider';
 import type { DbOverviewTable, RelationOption, SchemaColumn, SchemaRelationModule, SchemaTable, SchemaTableDetail } from '../types';
 
 const DDL_TYPES = [
@@ -121,6 +122,9 @@ export function SchemaExplorer({ onChanged}:{onChanged?:()=>void}) {
 
 /* ================= Structure tab: columns DDL + indexes + table actions ================= */
 function StructureTab({detail,stats,onRefresh,onTableChanged}:{detail:SchemaTableDetail;stats?:DbOverviewTable;onRefresh:()=>Promise<void>;onTableChanged:(next?:string)=>Promise<void>}){
+  const confirm = useConfirm();
+  const prompt = usePrompt();
+  const showToast = useToast();
   const [colModal,setColModal] = useState<{mode:'add'|'edit';column?:SchemaColumn}|null>(null);
   const [idxModal,setIdxModal] = useState(false);
   const [busy,setBusy] = useState(false);
@@ -128,22 +132,22 @@ function StructureTab({detail,stats,onRefresh,onTableChanged}:{detail:SchemaTabl
 
   useEffect(()=>{ api.schemaTables().then(r=>setAllTables(r.tables.map(t=>t.name))).catch(()=>{}); },[]);
 
-  async function dropColumn(name:string){ if(!confirm(`¿Eliminar la columna "${name}"? Los datos se perderán.`))return; setBusy(true);
+  async function dropColumn(name:string){ if(!await confirm({message:`¿Eliminar la columna "${name}"? Los datos se perderán.`,danger:true,confirmLabel:'Eliminar'}))return; setBusy(true);
     try{ await api.dropDbColumn(detail.table,name); await onRefresh(); }finally{ setBusy(false); } }
-  async function dropForeignKey(column:string){ if(!confirm(`¿Eliminar la FK de la columna "${column}"?`))return; setBusy(true);
+  async function dropForeignKey(column:string){ if(!await confirm({message:`¿Eliminar la FK de la columna "${column}"?`,danger:true,confirmLabel:'Eliminar'}))return; setBusy(true);
     try{ await api.dropForeignKey(detail.table,column); await onRefresh(); }finally{ setBusy(false); } }
-  async function linkForeignKey(column:string){ 
-    const fkTable=prompt(`Tabla referenciada para ${column}:`,allTables.find(t=>t!==detail.table));
+  async function linkForeignKey(column:string){
+    const fkTable=await prompt({title:'Vincular llave foránea',message:`Tabla referenciada para ${column}:`,defaultValue:allTables.find(t=>t!==detail.table)});
     if(!fkTable?.trim())return; setBusy(true);
     try{ await api.addForeignKey(detail.table,{column,referenced_table:fkTable.trim()}); await onRefresh(); }finally{ setBusy(false); } }
-  async function dropIndex(name:string){ if(!confirm(`¿Eliminar el índice "${name}"?`))return; setBusy(true);
+  async function dropIndex(name:string){ if(!await confirm({message:`¿Eliminar el índice "${name}"?`,danger:true,confirmLabel:'Eliminar'}))return; setBusy(true);
     try{ await api.dropDbIndex(detail.table,name); await onRefresh(); }finally{ setBusy(false); } }
-  async function renameTable(){ const n=prompt('Nuevo nombre de la tabla:',detail.table.replace(/^nx_/,'')); if(!n?.trim())return; setBusy(true);
-    try{ const r=await api.renameDbTable(detail.table,n.trim()); alert(`Tabla renombrada a ${r.table}.`); await onTableChanged(r.table); }finally{ setBusy(false); } }
-  async function truncate(){ if(!confirm(`¿Vaciar TODOS los registros de ${detail.table}? (La estructura se conserva)`))return; setBusy(true);
+  async function renameTable(){ const n=await prompt({title:'Renombrar tabla',message:'Nuevo nombre de la tabla:',defaultValue:detail.table.replace(/^nx_/,'')}); if(!n?.trim())return; setBusy(true);
+    try{ const r=await api.renameDbTable(detail.table,n.trim()); showToast(`Tabla renombrada a ${r.table}.`); await onTableChanged(r.table); }finally{ setBusy(false); } }
+  async function truncate(){ if(!await confirm({message:`¿Vaciar TODOS los registros de ${detail.table}? (La estructura se conserva)`,danger:true,confirmLabel:'Vaciar'}))return; setBusy(true);
     try{ await api.truncateDbTable(detail.table); await onRefresh(); }finally{ setBusy(false); } }
-  async function dropTable(){ if(!confirm(`¿ELIMINAR la tabla ${detail.table} con todos sus datos? Esta acción es irreversible.`))return;
-    if(prompt(`Escribe ELIMINAR para confirmar:`)!=='ELIMINAR')return; setBusy(true);
+  async function dropTable(){ if(!await confirm({message:`¿ELIMINAR la tabla ${detail.table} con todos sus datos? Esta acción es irreversible.`,danger:true,confirmLabel:'Eliminar',requireText:'ELIMINAR'}))return;
+    setBusy(true);
     try{ await api.dropDbTable(detail.table); await onTableChanged(); }finally{ setBusy(false); } }
 
   return <div className="panel structure-panel">
@@ -184,6 +188,7 @@ function StructureTab({detail,stats,onRefresh,onTableChanged}:{detail:SchemaTabl
 
 /* ================= Browse tab: paginated raw data ================= */
 function BrowseTab({table,columns,onChanged}:{table:string;columns:SchemaColumn[];onChanged:()=>Promise<void>}){
+  const confirm = useConfirm();
   const [page,setPage] = useState<{data:Record<string,unknown>[];total:number;current_page:number;last_page:number}|null>(null);
   const [pn,setPn] = useState(1); const [search,setSearch] = useState(''); const [loading,setLoading] = useState(true);
   const [importResult,setImportResult] = useState<{inserted:number;errors:string[]}|null>(null);
@@ -191,7 +196,7 @@ function BrowseTab({table,columns,onChanged}:{table:string;columns:SchemaColumn[
   const fileRef = useRef<HTMLInputElement>(null);
   const load = useCallback(async()=>{ setLoading(true); try{ setPage(await api.browse(table,pn,search)); }finally{ setLoading(false); } },[table,pn,search]);
   useEffect(()=>{void load();},[load]);
-  async function del(id:number){ if(!confirm(`¿Eliminar el registro #${id}?`))return; await api.deleteRow(table,id); await load(); await onChanged(); }
+  async function del(id:number){ if(!await confirm({message:`¿Eliminar el registro #${id}?`,danger:true,confirmLabel:'Eliminar'}))return; await api.deleteRow(table,id); await load(); await onChanged(); }
   const cols = columns.slice(0,12);
 
   async function doImport(file:File){ setLoading(true);
@@ -348,13 +353,13 @@ function SqlTab(){
   }
 
   async function run(){ setRunning(true); setError(''); try{ setResult(await api.runSql(sql)); }catch(e){ setError((e as Error).message); setResult(null); }finally{ setRunning(false); } }
-  function useSnippet(snippet:string){ setSql(snippet); setShowSug(false); setTimeout(()=>editorRef.current?.focus(),0); }
+  function insertSnippet(snippet:string){ setSql(snippet); setShowSug(false); setTimeout(()=>editorRef.current?.focus(),0); }
 
   return <div className="panel sql-panel sql-workbench">
     <div className="panel-head slim sql-workbench-head"><div><span className="kicker"><Play size={13}/>Consola asistida</span><h2>Editor SQL de sólo lectura</h2><p>Explora datos y estructura con sugerencias de tablas, columnas, funciones y comandos.</p></div>
       <span className="sql-safe-badge"><CheckCircle size={12}/>Conexión protegida · sin escritura</span></div>
     <div className="sql-editor-wrap">
-      <div className="sql-editor-toolbar"><div><button type="button" onClick={()=>useSnippet('SELECT *\nFROM ')}>SELECT *</button><button type="button" onClick={()=>useSnippet('SHOW TABLES;')}>SHOW TABLES</button><button type="button" onClick={()=>useSnippet(`DESCRIBE ${tablesRef.current[0]??''};`)}>DESCRIBE</button></div><span><Sparkles size={12}/>Autocompletado activo</span></div>
+      <div className="sql-editor-toolbar"><div><button type="button" onClick={()=>insertSnippet('SELECT *\nFROM ')}>SELECT *</button><button type="button" onClick={()=>insertSnippet('SHOW TABLES;')}>SHOW TABLES</button><button type="button" onClick={()=>insertSnippet(`DESCRIBE ${tablesRef.current[0]??''};`)}>DESCRIBE</button></div><span><Sparkles size={12}/>Autocompletado activo</span></div>
       <div className="sql-editor-container">
         <div className="sql-gutter" aria-hidden="true">{sql.split('\n').map((_,i)=><span key={i}>{i+1}</span>)}</div>
         <textarea ref={editorRef} className="code-editor sql" value={sql} onChange={handleInput} onKeyDown={handleKeyDown} onClick={e=>updateCursor(e.currentTarget)} onKeyUp={e=>updateCursor(e.currentTarget)} onBlur={()=>setTimeout(()=>setShowSug(false),150)} spellCheck={false} aria-label="Consulta SQL"/>
@@ -448,7 +453,7 @@ function ColumnModal({table,mode,column,onClose,onDone,allTables}:{table:string;
         {form.fk_table&&<div className="fk-preview"><small>VARCHAR → </small><code>{table}.{form.name}</code><small> → </small><code>{form.fk_table}.{form.fk_column}</code><small> ({form.fk_on_delete})</small></div>}
       </div>}
       <div className="toggle-row">
-        <label className="check"><input type="checkbox" checked={form.nullable} onChange={e=>setForm({...form,nullable:e.target.checked})}/><span>Acepta nulos</span></label>
+        <label className="check"><input type="checkbox" checked={form.nullable} onChange={e=>setForm({...form,nullable:e.target.checked,fk_on_delete:!e.target.checked&&form.fk_on_delete==='SET NULL'?'RESTRICT':form.fk_on_delete})}/><span>Acepta nulos</span></label>
         {mode==='edit'&&<label className="check"><input type="checkbox" checked={form.unique} onChange={e=>setForm({...form,unique:e.target.checked})}/><span>Valor único</span></label>}
         {['integer','int','smallint'].includes(form.data_type)&&<label className="check"><input type="checkbox" checked={form.unsigned} onChange={e=>setForm({...form,unsigned:e.target.checked})}/><span>Unsigned</span></label>}
       </div>
@@ -500,7 +505,13 @@ function CreateTableModal({onClose,onCreated}:{onClose:()=>void;onCreated:(table
     });
   },[cols]);
 
-  function updateCol(i:number,patch:Partial<ColDef>){ setCols(v=>v.map((x,j)=>j===i?{...x,...patch}:x)); }
+  function updateCol(i:number,patch:Partial<ColDef>){ setCols(v=>v.map((x,j)=>{
+    if(j!==i)return x;
+    const next = {...x,...patch};
+    // A NOT NULL column can't have "ON DELETE SET NULL" — MySQL rejects the constraint outright.
+    if(!next.nullable&&next.fk_on_delete==='SET NULL')next.fk_on_delete='RESTRICT';
+    return next;
+  })); }
   function moveCol(i:number,dir:-1|1){ const j=i+dir; if(j<0||j>=cols.length)return; setCols(v=>{const a=[...v];[a[i],a[j]]=[a[j],a[i]];return a;}); }
 
   const quickFields = [
@@ -686,7 +697,6 @@ const TYPE_COLORS:Record<string,string> = {
   'tinyint':'#10b981','boolean':'#10b981',
   'date':'#ec4899','datetime':'#ec4899','timestamp':'#ec4899','time':'#ec4899',
 };
-const TYPE_ICONS:Record<string,string> = { PK:'🔑', FK:'🔗', UQ:'⭐', IDX:'📇' };
 
 function RelationsGraph({relations,tables}:{relations:SchemaRelationModule[];tables:SchemaTable[]}){
   const [details,setDetails] = useState<Record<string,SchemaTableDetail>>({});
@@ -759,7 +769,7 @@ function RelationsGraph({relations,tables}:{relations:SchemaRelationModule[];tab
           const fi=positions[e.from], ti=positions[e.to];
           if(!fi||!ti) return null;
           const a=nodeCenter(e.from), b=nodeCenter(e.to);
-          const dx=b.x-a.x, dy=b.y-a.y;
+          const dx=b.x-a.x;
           const sx=Math.sign(dx)||1;
           const y1=fi.y+fi.h/2, y2=ti.y+ti.h/2;
           const x1=sx>0?fi.x+nodeW:fi.x;
