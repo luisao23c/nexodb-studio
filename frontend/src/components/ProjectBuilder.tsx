@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, LoaderCircle, Check, X, Monitor, Tablet, Smartphone, Layers, Maximize2, Minimize2, ExternalLink, Download, GitBranch } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, LoaderCircle, Check, X, Monitor, Tablet, Smartphone, Layers, Maximize2, Minimize2, ExternalLink, Download, GitBranch, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { api } from '../api/client';
 import type { BuilderForm, BuilderRoute, BuilderView, Project } from '../types';
 import { ComponentPalette, ComponentDropZone, renderComponents } from './ComponentPalette';
@@ -222,6 +222,7 @@ export default function ProjectBuilder({project,onProjectUpdated}:{project?:Proj
   const [forms,setForms] = useState<BuilderForm[]>([]);
   const [views,setViews] = useState<BuilderView[]>([]);
   const [showPreview,setShowPreview] = useState(false);
+  const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>window.localStorage.getItem('nexodb:builder-sidebar')==='collapsed');
   const [busy,setBusy] = useState(false);
   const [showConfig,setShowConfig] = useState(false);
   const [newRouteName,setNewRouteName] = useState('');
@@ -264,11 +265,14 @@ export default function ProjectBuilder({project,onProjectUpdated}:{project?:Proj
     finally{ setExporting(false); }
   }
 
-  return <div className="project-builder">
+  function toggleSidebar(){setSidebarCollapsed(current=>{const next=!current;window.localStorage.setItem('nexodb:builder-sidebar',next?'collapsed':'open');return next;});}
+
+  return <div className={`project-builder ${sidebarCollapsed?'sidebar-collapsed':''}`}>
     <div className="pb-left">
       <div className="pb-header">
         <div><span>Arquitectura visual</span><h2>Constructor de Proyectos</h2></div>
         <div className="pb-header-actions">
+          <button className="pb-preview-button pb-collapse-button" title={sidebarCollapsed?'Mostrar menú del constructor':'Ocultar menú y ampliar canvas'} onClick={toggleSidebar}>{sidebarCollapsed?<PanelLeftOpen size={16}/>:<PanelLeftClose size={16}/>}<span>{sidebarCollapsed?'Mostrar':'Ocultar'}</span></button>
           <button className={`pb-preview-button ${showVersions?'active':''}`} title="Historial de versiones" onClick={()=>{setShowVersions(!showVersions);setShowPreview(false);}}><GitBranch size={15}/><span>Versiones</span></button>
           <button className={`pb-preview-button ${showPreview?'active':''}`} title="Vista previa del proyecto" onClick={()=>setShowPreview(!showPreview)}>{showPreview?<EyeOff size={15}/>:<Eye size={15}/>}<span>{showPreview?'Volver':'Previsualizar'}</span></button>
           <button className="pb-preview-button" title="Vista previa publicada" onClick={()=>{

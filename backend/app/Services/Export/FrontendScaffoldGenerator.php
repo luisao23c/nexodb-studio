@@ -186,6 +186,11 @@ input, select, textarea { border: 1px solid #dfe4ea; border-radius: 8px; padding
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field label { font-size: .78rem; font-weight: 600; }
 .field small.error { color: #dc4564; }
+.input-filled input, .input-filled select, .input-filled textarea { border-color: transparent; background: #f0f2f6; }
+.input-underline input, .input-underline select, .input-underline textarea { border-width: 0 0 2px; border-radius: 0; background: transparent; }
+.input-floating .field { position: relative; padding-top: 6px; }
+.input-floating .field > label { position: absolute; z-index: 1; top: 0; left: 8px; padding: 0 4px; background: #fff; color: #6257e8; font-size: .65rem; }
+.input-floating .field > input, .input-floating .field > select, .input-floating .field > textarea { padding-top: 12px; }
 button { border: 0; border-radius: 8px; padding: 9px 16px; background: #6257e8; color: #fff; font-weight: 600; cursor: pointer; }
 button.secondary { background: #edf0f4; color: #172033; }
 .pagination { display: flex; gap: 8px; margin-top: 12px; align-items: center; }

@@ -76,6 +76,11 @@ class ComponentCodeGenerator
             'progress' => $this->progress($config),
             'accordion' => $this->accordion($config),
             'video' => $this->video($config),
+            'quote' => $this->quoteBlock($config),
+            'gallery' => $this->gallery($config),
+            'checklist' => $this->checklist($config),
+            'timeline' => $this->timeline($config),
+            'embed' => $this->embed($config),
             default => '<div>{'.$this->js($label).'}</div>',
         };
         $id = $this->js($comp['id'] ?? '');
@@ -177,8 +182,9 @@ class ComponentCodeGenerator
         }
         $fieldsJson = json_encode(array_values($fields), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $title = ($c['show_title'] ?? true) !== false ? '<h2>{'.$this->js($c['title'] ?? $label).'}</h2>' : '';
+        $inputVariant = $this->js('input-'.($form->settings['inputVariant'] ?? 'outline'));
 
-        return "<div>{$title}<GeneratedForm resource=".$this->js($resource).' submitLabel='.$this->js($form->submit_label)." fields={{$fieldsJson}} /></div>";
+        return "<div className={{$inputVariant}}>{$title}<GeneratedForm resource=".$this->js($resource).' submitLabel='.$this->js($form->submit_label)." fields={{$fieldsJson}} /></div>";
     }
 
     private function table(array $c, string $label): string
@@ -338,7 +344,7 @@ TSX;
 
     private function columns(array $c): string
     {
-        $count = max(1, min(4, (int) ($c['columns'] ?? 2)));
+        $count = max(1, min(12, (int) ($c['columns'] ?? 2)));
         $gap = (int) ($c['gap'] ?? 16);
         $children = is_array($c['children'] ?? null) ? $c['children'] : [];
         $cols = [];
@@ -395,8 +401,47 @@ TSX;
     {
         $src = $this->js($c['src'] ?? '');
         $title = $this->js($c['title'] ?? 'Video');
+        $ratio = in_array($c['ratio'] ?? '16/9', ['16/9', '4/3', '1/1', '9/16'], true) ? $c['ratio'] : '16/9';
 
-        return "<video src={{$src}} aria-label={{$title}} controls style={{width:'100%',aspectRatio:'16/9',background:'#111827',borderRadius:12}} />";
+        return "<video src={{$src}} aria-label={{$title}} controls style={{width:'100%',aspectRatio:'{$ratio}',background:'#111827',borderRadius:12}} />";
+    }
+
+    private function quoteBlock(array $c): string
+    {
+        return '<blockquote className="panel"><p>{'.$this->js($c['quote'] ?? '').'}</p><footer><strong>{'.$this->js($c['author'] ?? '').'}</strong><small>{'.$this->js($c['role'] ?? '').'}</small></footer></blockquote>';
+    }
+
+    private function gallery(array $c): string
+    {
+        $images = is_array($c['images'] ?? null) ? $c['images'] : [];
+        $columns = max(1, min(6, (int) ($c['columns'] ?? 2)));
+        $radius = ($c['rounded'] ?? true) !== false ? 10 : 0;
+        $items = implode('', array_map(fn ($src, $index) => '<img src={'.$this->js($src).'} alt={'.$this->js('Galería '.($index + 1))."} style={{width:'100%',aspectRatio:'4/3',objectFit:'cover',borderRadius:{$radius}}} />", $images, array_keys($images)));
+
+        return "<div style={{display:'grid',gridTemplateColumns:'repeat({$columns},minmax(0,1fr))',gap:10}}>{$items}</div>";
+    }
+
+    private function checklist(array $c): string
+    {
+        $items = is_array($c['items'] ?? null) ? $c['items'] : [];
+        $rows = implode('', array_map(fn ($item) => '<li>✓ {'.$this->js($item).'}</li>', $items));
+
+        return '<div className="panel"><h3>{'.$this->js($c['title'] ?? '')."}</h3><ul>{$rows}</ul></div>";
+    }
+
+    private function timeline(array $c): string
+    {
+        $items = is_array($c['items'] ?? null) ? $c['items'] : [];
+        $rows = implode('', array_map(fn ($item) => '<article><strong>{'.$this->js($item['title'] ?? '').'}</strong><p>{'.$this->js($item['description'] ?? '').'}</p></article>', $items));
+
+        return "<section className=\"panel\">{$rows}</section>";
+    }
+
+    private function embed(array $c): string
+    {
+        $height = max(160, min(1000, (int) ($c['height'] ?? 360)));
+
+        return '<iframe src={'.$this->js($c['url'] ?? '').'} title={'.$this->js($c['title'] ?? 'Contenido externo')."} style={{width:'100%',height:{$height},border:0,borderRadius:12}} />";
     }
 
     private function accordion(array $c): string
