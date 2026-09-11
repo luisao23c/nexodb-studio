@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\MenuController;
 use App\Http\Controllers\Api\PageController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectExportController;
+use App\Http\Controllers\Api\ProjectVersionController;
 use App\Http\Controllers\Api\PublicPreviewController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\RouteController;
@@ -18,14 +19,18 @@ Route::get('/health', fn () => ['ok' => true, 'name' => 'NexoDB Studio']);
 // Public render of a custom page (used by the preview).
 Route::get('/pages/{page}/render', [PageController::class, 'show'])->whereNumber('page');
 
-// Public, unauthenticated, read-only preview endpoints — gated per-project by `is_public`.
+// Public preview endpoints. Reads require `is_public`; writes also require the
+// project's explicit `preview_writes_enabled` opt-in.
 Route::prefix('preview')->middleware('throttle:60,1')->group(function () {
     Route::get('/{project}/routes', [PublicPreviewController::class, 'routes']);
     Route::get('/{project}/forms', [PublicPreviewController::class, 'forms']);
     Route::get('/{project}/views', [PublicPreviewController::class, 'views']);
     Route::get('/{project}/data/{table}', [PublicPreviewController::class, 'browse'])->where('table', '[a-zA-Z0-9_]+');
+    Route::post('/{project}/data/{table}', [PublicPreviewController::class, 'store'])->where('table', '[a-zA-Z0-9_]+');
+    Route::put('/{project}/data/{table}/{id}', [PublicPreviewController::class, 'update'])->where('table', '[a-zA-Z0-9_]+')->whereNumber('id');
+    Route::delete('/{project}/data/{table}/{id}', [PublicPreviewController::class, 'destroy'])->where('table', '[a-zA-Z0-9_]+')->whereNumber('id');
     Route::get('/{project}/lookup/{table}', [PublicPreviewController::class, 'lookup'])->where('table', '[a-zA-Z0-9_]+');
-    Route::get('/{project}/charts/{chart}', [PublicPreviewController::class, 'chartData']);
+    Route::get('/{project}/charts/{chart}', [PublicPreviewController::class, 'chartData'])->whereNumber('chart');
 });
 
 Route::middleware(['builder.admin', 'throttle:api'])->prefix('builder')->group(function () {
@@ -65,6 +70,12 @@ Route::middleware(['builder.admin', 'throttle:api'])->prefix('builder')->group(f
     Route::put('/projects/{project}', [ProjectController::class, 'update']);
     Route::delete('/projects/{project}', [ProjectController::class, 'destroy']);
     Route::post('/projects/{project}/export', [ProjectExportController::class, 'export']);
+    Route::get('/projects/{project}/versions', [ProjectVersionController::class, 'index']);
+    Route::get('/projects/{project}/versions/{version}', [ProjectVersionController::class, 'show']);
+    Route::post('/projects/{project}/versions', [ProjectVersionController::class, 'store']);
+    Route::post('/projects/{project}/versions/{version}/restore', [ProjectVersionController::class, 'restore']);
+    Route::post('/projects/{project}/versions/{version}/publish', [ProjectVersionController::class, 'publish']);
+    Route::delete('/projects/{project}/versions/{version}', [ProjectVersionController::class, 'destroy']);
 
     // Roles & permissions (global, not project-scoped — informational only)
     Route::get('/roles', [RoleController::class, 'index']);

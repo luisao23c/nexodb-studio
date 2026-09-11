@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, LoaderCircle, Check, X, Monitor, Tablet, Smartphone, Layers, Maximize2, Minimize2, ExternalLink, Download } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Eye, EyeOff, Table2, FormInput, BarChart3, FileText, ArrowRight, Layout, LoaderCircle, Check, X, Monitor, Tablet, Smartphone, Layers, Maximize2, Minimize2, ExternalLink, Download, GitBranch } from 'lucide-react';
 import { api } from '../api/client';
 import type { BuilderForm, BuilderRoute, BuilderView, Project } from '../types';
 import { ComponentPalette, ComponentDropZone, renderComponents } from './ComponentPalette';
 import type { PageComponent } from './ComponentPalette';
 import { useConfirm, useToast } from './ui/DialogProvider';
+import { ProjectVersions } from './ProjectVersions';
 
 /* ================= Route Tree Node ================= */
 function RouteNode({route,depth,selectedId,onSelect,onToggleAdd,onDelete,onRename,addingToParent,newChildName,setNewChildName,onConfirmAdd,busy}:{route:BuilderRoute;depth:number;selectedId:number|null;onSelect:(r:BuilderRoute)=>void;onToggleAdd:(parentId:number)=>void;onDelete:(id:number)=>void;onRename:(id:number,name:string)=>void;addingToParent:number|null;newChildName:string;setNewChildName:(v:string)=>void;onConfirmAdd:()=>void;busy:boolean}){
@@ -208,7 +209,7 @@ function ProjectPreview({routes,paths,forms,views,onClose}:{routes:BuilderRoute[
 }
 
 /* ================= Main ProjectBuilder ================= */
-export default function ProjectBuilder({project}:{project?:Project|null}){
+export default function ProjectBuilder({project,onProjectUpdated}:{project?:Project|null;onProjectUpdated?:(project:Project)=>void}){
   const confirm = useConfirm();
   const showToast = useToast();
   const [routes,setRoutes] = useState<BuilderRoute[]>([]);
@@ -224,6 +225,7 @@ export default function ProjectBuilder({project}:{project?:Project|null}){
   const [addingToParent,setAddingToParent] = useState<number|null>(null);
   const [newChildName,setNewChildName] = useState('');
   const [exporting,setExporting] = useState(false);
+  const [showVersions,setShowVersions] = useState(false);
 
   const load = useCallback(async()=>{
     const [tree,flat,tbls,savedForms,savedViews] = await Promise.all([api.routes(),api.routesFlat(),api.schemaTables(),api.forms(),api.views()]);
@@ -264,6 +266,7 @@ export default function ProjectBuilder({project}:{project?:Project|null}){
       <div className="pb-header">
         <div><span>Arquitectura visual</span><h2>Constructor de Proyectos</h2></div>
         <div className="pb-header-actions">
+          <button className={`pb-preview-button ${showVersions?'active':''}`} title="Historial de versiones" onClick={()=>{setShowVersions(!showVersions);setShowPreview(false);}}><GitBranch size={15}/><span>Versiones</span></button>
           <button className={`pb-preview-button ${showPreview?'active':''}`} title="Vista previa del proyecto" onClick={()=>setShowPreview(!showPreview)}>{showPreview?<EyeOff size={15}/>:<Eye size={15}/>}<span>{showPreview?'Volver':'Previsualizar'}</span></button>
           <button className="pb-preview-button" title="Vista previa publicada" onClick={()=>{
             if(!project){showToast('Selecciona un proyecto primero.','error');return;}
@@ -287,7 +290,8 @@ export default function ProjectBuilder({project}:{project?:Project|null}){
       <div className="pb-stats"><span>{flatRoutes.length} rutas</span><span>·</span><span>{tables.length} tablas</span></div>
     </div>
     <div className="pb-right">
-      {showPreview?<ProjectPreview routes={routes} paths={buildRoutePaths(flatRoutes)} forms={forms} views={views} onClose={()=>setShowPreview(false)}/>
+      {showVersions&&project?<ProjectVersions project={project} onClose={()=>setShowVersions(false)} onRestored={async()=>{await load();const refreshed=(await api.projects()).find(item=>item.id===project.id);if(refreshed)onProjectUpdated?.(refreshed);setSelected(null);setShowConfig(false);}} onPublished={updated=>onProjectUpdated?.(updated)}/>
+        :showPreview?<ProjectPreview routes={routes} paths={buildRoutePaths(flatRoutes)} forms={forms} views={views} onClose={()=>setShowPreview(false)}/>
         :showConfig&&selected?<RouteConfig key={selected.id} route={selected} tables={tables} forms={forms} views={views} onSave={saveRoute} onClose={()=>{setShowConfig(false);setSelected(null);}}/>
         :<div className="pb-placeholder"><Layout size={48}/><h2>Constructor de Proyectos</h2><p>Selecciona una ruta del árbol para configurarla, o activa el preview para ver tu proyecto</p></div>}
     </div>

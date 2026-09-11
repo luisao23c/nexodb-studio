@@ -1,4 +1,4 @@
-import type { AuditEntry, BrowsePage, BuilderForm, BuilderRoute, BuilderView, Chart, ChartData, CodePage, DashboardData, DbForeignKey, DbOverviewTable, Menu, MenuItem, Project, RelationOption, Role, SchemaRelationModule, SchemaTable, SchemaTableDetail, SqlResult } from '../types';
+import type { AuditEntry, BrowsePage, BuilderForm, BuilderRoute, BuilderView, Chart, ChartData, CodePage, DashboardData, DbForeignKey, DbOverviewTable, Menu, MenuItem, Project, ProjectVersion, RelationOption, Role, SchemaRelationModule, SchemaTable, SchemaTableDetail, SqlResult } from '../types';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 const KEY = import.meta.env.VITE_BUILDER_KEY || '';
@@ -73,9 +73,9 @@ export const api = {
   browse: (table:string,page=1,search='') => previewProjectId !== null
     ? request<BrowsePage>(`/preview/${previewProjectId}/data/${table}?page=${page}&search=${encodeURIComponent(search)}`)
     : request<BrowsePage>(`/builder/db/${table}/browse?page=${page}&search=${encodeURIComponent(search)}`),
-  createRow: (table:string,data:Record<string,unknown>) => request<Record<string,unknown>>(`/builder/db/${table}/rows`,{method:'POST',...json(data)}),
-  updateRow: (table:string,id:number,data:Record<string,unknown>) => request<Record<string,unknown>>(`/builder/db/${table}/rows/${id}`,{method:'PUT',...json(data)}),
-  deleteRow: (table:string,id:number) => request<void>(`/builder/db/${table}/rows/${id}`,{method:'DELETE'}),
+  createRow: (table:string,data:Record<string,unknown>) => request<Record<string,unknown>>(previewProjectId!==null?`/preview/${previewProjectId}/data/${table}`:`/builder/db/${table}/rows`,{method:'POST',...json(data)}),
+  updateRow: (table:string,id:number,data:Record<string,unknown>) => request<Record<string,unknown>>(previewProjectId!==null?`/preview/${previewProjectId}/data/${table}/${id}`:`/builder/db/${table}/rows/${id}`,{method:'PUT',...json(data)}),
+  deleteRow: (table:string,id:number) => request<void>(previewProjectId!==null?`/preview/${previewProjectId}/data/${table}/${id}`:`/builder/db/${table}/rows/${id}`,{method:'DELETE'}),
   runSql: (sql:string) => request<SqlResult>('/builder/db/query',{method:'POST',...json({sql})}),
   createDbTable: (data:DbTableInput) => request<{ok:boolean;table:string}>('/builder/db/tables',{method:'POST',...json(data)}),
   addDbColumn: (table:string,data:DbColumnInput & {name:string}) => request<{ok:boolean}>(`/builder/db/${table}/columns`,{method:'POST',...json(data)}),
@@ -114,7 +114,7 @@ export const api = {
   createChart: (data:Partial<Chart>) => request<Chart>('/builder/charts',{method:'POST',...json(data)}),
   updateChart: (id:number,data:Partial<Chart>) => request<Chart>(`/builder/charts/${id}`,{method:'PUT',...json(data)}),
   deleteChart: (id:number) => request<void>(`/builder/charts/${id}`,{method:'DELETE'}),
-  chartData: (id:number) => request<ChartData>(`/builder/charts/${id}/data`),
+  chartData: (id:number) => request<ChartData>(previewProjectId!==null?`/preview/${previewProjectId}/charts/${id}`:`/builder/charts/${id}/data`),
 
   // Custom pages
   pages: () => request<CodePage[]>('/builder/pages'),
@@ -150,12 +150,18 @@ export const api = {
   deleteRoute: (id:number) => request<{ok:boolean}>(`/builder/routes/${id}`,{method:'DELETE'}),
   reorderRoutes: (order:{id:number;parent_id:number|null;sort_order:number}[]) => request<{ok:boolean}>('/builder/routes-reorder',{method:'POST',...json({order})}),
   routesPreview: () => previewProjectId !== null
-    ? request<{routes:BuilderRoute[];paths:Record<number,string>}>(`/preview/${previewProjectId}/routes`)
-    : request<{routes:BuilderRoute[];paths:Record<number,string>;tables:{name:string}[]}>('/builder/routes-preview'),
+    ? request<{routes:BuilderRoute[];paths:Record<number,string>;version?:string|null;project?:Pick<Project,'id'|'name'|'slug'|'preview_writes_enabled'>}>(`/preview/${previewProjectId}/routes`)
+    : request<{routes:BuilderRoute[];paths:Record<number,string>;tables:{name:string}[];version?:string|null;project?:Pick<Project,'id'|'name'|'slug'|'preview_writes_enabled'>}>('/builder/routes-preview'),
 
   // Projects (meta)
   projects: () => request<Project[]>('/builder/projects'),
   createProject: (data:{name:string}) => request<Project>('/builder/projects',{method:'POST',...json(data)}),
-  updateProject: (id:number,data:Partial<Pick<Project,'name'|'icon'|'is_public'|'active'>>) => request<Project>(`/builder/projects/${id}`,{method:'PUT',...json(data)}),
+  updateProject: (id:number,data:Partial<Pick<Project,'name'|'icon'|'is_public'|'preview_writes_enabled'|'active'>>) => request<Project>(`/builder/projects/${id}`,{method:'PUT',...json(data)}),
   deleteProject: (id:number) => request<void>(`/builder/projects/${id}`,{method:'DELETE'}),
+  projectVersions: (id:number) => request<ProjectVersion[]>(`/builder/projects/${id}/versions`),
+  projectVersion: (id:number,versionId:number) => request<ProjectVersion>(`/builder/projects/${id}/versions/${versionId}`),
+  createProjectVersion: (id:number,data:{version?:string;bump?:'auto'|'major'|'minor'|'patch';label?:string;notes?:string}) => request<ProjectVersion>(`/builder/projects/${id}/versions`,{method:'POST',...json(data)}),
+  restoreProjectVersion: (id:number,versionId:number) => request<{ok:boolean;message:string}>(`/builder/projects/${id}/versions/${versionId}/restore`,{method:'POST'}),
+  publishProjectVersion: (id:number,versionId:number) => request<ProjectVersion>(`/builder/projects/${id}/versions/${versionId}/publish`,{method:'POST'}),
+  deleteProjectVersion: (id:number,versionId:number) => request<void>(`/builder/projects/${id}/versions/${versionId}`,{method:'DELETE'}),
 };

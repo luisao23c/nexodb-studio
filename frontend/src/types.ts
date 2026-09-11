@@ -11,7 +11,8 @@ export interface SqlResult { columns:string[]; rows:Record<string,unknown>[]; co
 export interface AuditEntry { id:number; actor:string; action:string; target_type?:string|null; target?:string|null; sql_statement?:string|null; meta?:Record<string,unknown>|null; ip?:string|null; created_at:string; }
 export interface DashboardData { database:string; tables:DbOverviewTable[]; total_tables:number; total_rows:number; total_size_kb:number; recent:{action:string;target?:string|null;created_at:string}[]; activity:{d:string;c:number}[]; }
 
-export interface Project { id:number; name:string; slug:string; icon?:string|null; is_public:boolean; active:boolean; created_at?:string; }
+export interface Project { id:number; name:string; slug:string; icon?:string|null; is_public:boolean; preview_writes_enabled:boolean; active:boolean; created_at?:string; }
+export interface ProjectVersion { id:number; project_id:number; version:string; major:number; minor:number; patch:number; label?:string|null; notes?:string|null; change_summary?:Record<string,{label:string;total:number;delta:number}>|null; snapshot_hash:string; is_published:boolean; restored_at?:string|null; created_at:string; snapshot?:Record<string,unknown>; }
 
 export interface Menu { id:number; project_id:number; name:string; slug:string; icon:string; sort_order:number; active:boolean; items:MenuItem[]; }
 export interface MenuItem { id:number; menu_id:number; parent_id?:number|null; label:string; icon:string; target_type:'table'|'page'|'chart_dashboard'|'url'; target_id?:number|null; target_table?:string|null; url?:string|null; badge?:string|null; sort_order:number; active:boolean; required_role_ids?:number[]|null; }

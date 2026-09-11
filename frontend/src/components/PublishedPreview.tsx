@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Layout, LoaderCircle } from 'lucide-react';
+import { DatabaseZap, Layout, LoaderCircle } from 'lucide-react';
 import { api, setPreviewMode } from '../api/client';
 import { renderComponents, type PageComponent } from './ComponentPalette';
 import { findFirstVisibleRoute } from './ProjectBuilder';
@@ -16,6 +16,7 @@ export function PublishedPreview() {
   const [activePath, setActivePath] = useState('/');
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [meta,setMeta]=useState<{name:string;version?:string|null;writable:boolean}>({name:'Proyecto',writable:false});
 
   useEffect(() => {
     const id = Number(projectId);
@@ -29,6 +30,7 @@ export function PublishedPreview() {
         setPaths(routesRes.paths);
         setForms(formsRes);
         setViews(viewsRes);
+        setMeta({name:routesRes.project?.name??'Proyecto',version:routesRes.version,writable:Boolean(routesRes.project?.preview_writes_enabled)});
         const first = findFirstVisibleRoute(routesRes.routes);
         if (first) setActivePath(routesRes.paths[first.id] || '/');
       } catch {
@@ -78,7 +80,7 @@ export function PublishedPreview() {
   if (notFound) return <div className="center-state"><Layout size={48}/><h2>Vista previa no disponible</h2><p>Este proyecto no existe o no tiene un preview público activo.</p></div>;
 
   return <div className="published-preview">
-    <div className="preview-sidebar"><div className="preview-site-brand"><span>N</span><div><strong>Proyecto</strong><small>Publicado con NexoDB</small></div></div>{buildNav(routes)}</div>
+    <div className="preview-sidebar"><div className="preview-site-brand"><span>N</span><div><strong>{meta.name}</strong><small>{meta.version?`Versión ${meta.version}`:'Preview en desarrollo'}</small></div></div>{buildNav(routes)}<div className={`published-runtime-status ${meta.writable?'live':''}`}><DatabaseZap size={13}/><span>{meta.writable?'Sistema funcional':'Solo lectura'}</span></div></div>
     <main className="preview-main">{renderContent()}</main>
   </div>;
 }

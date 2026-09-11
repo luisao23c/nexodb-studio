@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Globe, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, DatabaseZap, Globe, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { useConfirm, usePrompt, useToast } from './ui/DialogProvider';
 import type { Project } from '../types';
@@ -35,6 +35,13 @@ export function ProjectSwitcher({projects,currentId,onChange,onProjectsChange}:{
     showToast(updated.is_public?`"${p.name}" ahora es público — cualquiera con el link puede ver su preview.`:`"${p.name}" ahora es privado.`);
   }
 
+  async function togglePreviewWrites(p:Project){
+    if(!p.is_public){showToast('Primero publica el proyecto para activar pruebas con datos.','error');return;}
+    const updated=await api.updateProject(p.id,{preview_writes_enabled:!p.preview_writes_enabled});
+    onProjectsChange(projects.map(x=>x.id===p.id?updated:x));
+    showToast(updated.preview_writes_enabled?'Preview funcional activado: formularios y acciones ya pueden modificar datos.':'Preview protegido en modo solo lectura.');
+  }
+
   async function removeProject(p:Project){
     if(projects.length<=1){ showToast('No puedes eliminar el último proyecto.','error'); return; }
     if(!await confirm({message:`¿Eliminar el proyecto "${p.name}" y todo su contenido (rutas, menús, formularios, vistas, gráficas)? Esta acción es irreversible.`,danger:true,confirmLabel:'Eliminar'}))return;
@@ -53,6 +60,7 @@ export function ProjectSwitcher({projects,currentId,onChange,onProjectsChange}:{
           <span>{p.name}</span>
         </button>
         <button title={p.is_public?'Público — clic para hacerlo privado':'Privado — clic para hacerlo público'} onClick={()=>void togglePublic(p)}>{p.is_public?<Globe size={13}/>:<Lock size={13}/>}</button>
+        <button className={p.preview_writes_enabled?'preview-writes-active':''} title={p.preview_writes_enabled?'Preview funcional activo — clic para proteger datos':'Activar formularios y acciones en el preview'} onClick={()=>void togglePreviewWrites(p)}><DatabaseZap size={13}/></button>
         <button title="Renombrar" onClick={()=>void renameProject(p)}><Pencil size={13}/></button>
         <button title="Eliminar" onClick={()=>void removeProject(p)}><Trash2 size={13}/></button>
       </div>)}

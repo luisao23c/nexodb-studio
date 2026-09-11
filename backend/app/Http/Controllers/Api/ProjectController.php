@@ -34,6 +34,7 @@ class ProjectController extends Controller
             'name' => 'sometimes|string|max:100',
             'icon' => 'nullable|string|max:50',
             'is_public' => 'boolean',
+            'preview_writes_enabled' => 'boolean',
             'active' => 'boolean',
         ]);
         $project->update($data);

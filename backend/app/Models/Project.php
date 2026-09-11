@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Project extends Model
 {
-    protected $fillable = ['name', 'slug', 'icon', 'is_public', 'active'];
+    protected $fillable = ['name', 'slug', 'icon', 'is_public', 'preview_writes_enabled', 'active'];
 
     protected $casts = [
         'is_public' => 'boolean',
+        'preview_writes_enabled' => 'boolean',
         'active' => 'boolean',
     ];
 
@@ -42,5 +43,10 @@ class Project extends Model
     public function views(): HasMany
     {
         return $this->hasMany(BuilderView::class, 'project_id');
+    }
+
+    public function versions(): HasMany
+    {
+        return $this->hasMany(ProjectVersion::class)->orderByDesc('major')->orderByDesc('minor')->orderByDesc('patch');
     }
 }

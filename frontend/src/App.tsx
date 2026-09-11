@@ -77,7 +77,7 @@ function Shell({tables,loading,error,onReload,projects,currentProjectId,onChange
               <Route path="/" element={<Navigate to="/explorer" replace/>}/>
               <Route path="/explorer" element={<SchemaExplorer onChanged={onReload}/>}/>
               <Route path="/interfaces" element={<InterfaceStudio tables={tables}/>}/>
-              <Route path="/builder" element={<ProjectBuilder project={currentProject}/>}/>
+              <Route path="/builder" element={<ProjectBuilder project={currentProject} onProjectUpdated={updated=>onProjectsChange(projects.map(project=>project.id===updated.id?updated:project))}/>}/>
               <Route path="/menus" element={<MenuBuilder tables={tables}/>}/>
               <Route path="/roles" element={<RolesPermissions tables={tables}/>}/>
               <Route path="/charts" element={<ChartsStudio tables={tables}/>}/>
